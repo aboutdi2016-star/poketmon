@@ -1,6 +1,6 @@
 {
   "name": "pika-day",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Pikachu desktop task companion",
   "main": "desktop.cjs",
