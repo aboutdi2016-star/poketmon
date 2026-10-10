@@ -1,0 +1,20 @@
+{
+  "name": "pika-day",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Pikachu desktop task companion",
+  "main": "desktop.cjs",
+  "scripts": {
+    "start": "electron .",
+    "web": "node server.cjs",
+    "test": "node --test test/*.test.cjs",
+    "package:windows": "electron-packager . PikaDay --platform=win32 --arch=x64 --out=dist --overwrite --ignore=\"^/test\" --ignore=\"^/dist\""
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^38.0.0"
+  },
+  "dependencies": {
+    "undici": "^7.16.0"
+  }
+}
