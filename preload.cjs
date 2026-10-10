@@ -1,7 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('pikaDesktop', {
+  saveQuickNote: text => ipcRenderer.invoke('quick-note:save',text),
   productivityStatus: () => ipcRenderer.invoke('productivity:status'),
   saveProductivitySettings: input => ipcRenderer.invoke('productivity:settings',input),
+  startupStatus: () => ipcRenderer.invoke('startup:status'),
+  setStartup: enabled => ipcRenderer.invoke('startup:set',enabled),
   setFocus: start => ipcRenderer.invoke('focus:set',start),
   saveSummary: () => ipcRenderer.invoke('summary:save'),
   onFocus: callback => ipcRenderer.on('focus:update',(_event,data)=>callback(data)),
@@ -18,6 +21,6 @@ contextBridge.exposeInMainWorld('pikaDesktop', {
   loadMeetings: () => ipcRenderer.invoke('meetings:load'),
   saveMeetings: items => ipcRenderer.invoke('meetings:save', items),
   openLink: url => ipcRenderer.invoke('link:open', url),
-  notify: (title, body) => ipcRenderer.invoke('notify', {title, body}),
+  notify: (title, body, priority=2, count=1) => ipcRenderer.invoke('notify', {title, body,priority,count}),
   onReminder: callback => { ipcRenderer.on('reminder', (_event, m) => callback(m)); }
 });

@@ -1,7 +1,7 @@
 'use strict';
 const bridge=window.pikaCompanion,button=document.getElementById('pet'),image=document.getElementById('character');
 const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
-let pixels=null,drag=null,ignoring=false;
+let pixels=null,drag=null,ignoring=false,clickTimer,lastClick=0;
 function setIgnoring(value){if(value===ignoring)return;ignoring=value;bridge?.pointer({phase:'ignore',value});}
 function loadPixels(){if(!image.naturalWidth)return;canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;ctx.drawImage(image,0,0);pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;}
 image.onload=loadPixels;if(image.complete)loadPixels();
@@ -19,7 +19,7 @@ button.addEventListener('pointerdown',e=>{
  if(e.button!==0||!opaque(e.clientX,e.clientY))return;
  setIgnoring(false);drag={id:e.pointerId,x:e.screenX,y:e.screenY,moved:false};button.setPointerCapture(e.pointerId);button.classList.add('dragging');bridge?.pointer({phase:'start'});
 });
-function finish(e,canceled=false){if(!drag)return;const moved=drag.moved;drag=null;button.classList.remove('dragging');bridge?.pointer({phase:'end'});if(button.hasPointerCapture(e.pointerId))button.releasePointerCapture(e.pointerId);if(!canceled&&!moved)bridge?.panel();}
+function finish(e,canceled=false){if(!drag)return;const moved=drag.moved;drag=null;button.classList.remove('dragging');bridge?.pointer({phase:'end'});if(button.hasPointerCapture(e.pointerId))button.releasePointerCapture(e.pointerId);if(!canceled&&!moved){clearTimeout(clickTimer);if(Date.now()-lastClick<300){lastClick=0;bridge?.quickNote();}else{lastClick=Date.now();clickTimer=setTimeout(()=>bridge?.panel(),300);}}}
 button.addEventListener('pointerup',e=>finish(e));button.addEventListener('pointercancel',e=>finish(e,true));
 button.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();bridge?.panel();}});
 document.addEventListener('contextmenu',e=>{e.preventDefault();if(opaque(e.clientX,e.clientY))bridge?.menu();});

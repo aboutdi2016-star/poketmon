@@ -28,8 +28,8 @@ function addAlert(title,body,type='tasks',key=null) {
 }
 function validLink(url) { try { return new URL(url).protocol==='https:'; } catch { return false; } }
 function openLink(url) { if(!validLink(url))return; if(desktop)desktop.openLink(url); else window.open(url,'_blank','noopener,noreferrer'); }
-function notify(title,body) {
-  if(desktop) desktop.notify(title,body);
+function notify(title,body,priority=2,count=1) {
+  if(desktop) desktop.notify(title,body,priority,count);
   else if('Notification' in window && Notification.permission==='granted')new Notification(title,{body});
 }
 const characterImages={sleepy:'/assets/characters/sleepy.png',tired:'/assets/characters/tired.png',surprised:'/assets/characters/surprised.png',angry:'/assets/characters/angry.png'};
@@ -70,7 +70,7 @@ function renderTasks() {
   if(facePreview){mood=facePreview;greeting=PikaFaces.get(mood).label+' 표정 미리보기';message=PikaFaces.get(mood).caption;}
   if(!forcedEmotion&&!facePreview){const key=[mood,done,total,state.alerts.find(a=>!a.read&&a.type==='tasks')?.id||''].join(':');if(speechCache?.key!==key){speechCache={key,line:PikaDialogue.pick(mood==='happy'?(done===total?'complete':'halfway'):mood)};}greeting=speechCache.line+(mood==='happy'?` (${done}/${total})`:'');}
   expression(mood);$('greeting').textContent=greeting;$('message').textContent=message;
-  const visible=state.tasks.filter(t=>filter==='all'||(filter==='today'?PikaDayTools.todayTask(t):filter==='urgent'?!t.done&&t.priority===1:t.done)).slice().sort((a,b)=>Number(a.done)-Number(b.done)||a.priority-b.priority);
+  const visible=state.tasks.filter(t=>filter==='core'?t.coreDay===PikaDayTools.localDay():filter==='all'||(filter==='today'?PikaDayTools.todayTask(t):filter==='urgent'?!t.done&&t.priority===1:t.done)).slice().sort((a,b)=>Number(a.done)-Number(b.done)||a.priority-b.priority);
   $('tasks').replaceChildren();
   for(const t of visible){
     const row=el('div','task'+(t.done?' done':'')),cb=el('input','check');cb.type='checkbox';cb.checked=!!t.done;cb.setAttribute('aria-label',t.title+' 완료');
@@ -80,7 +80,7 @@ function renderTasks() {
     if(t.source==='obsidian'&&desktop){const link=el('button','source-link','노트 열기 ↗');link.onclick=()=>desktop.openObsidian(t.id);meta.append(link);}
     if(validLink(t.url)){const link=el('a','source-link','원문 ↗');link.href=t.url;link.target='_blank';link.rel='noopener noreferrer';link.onclick=e=>{e.preventDefault();openLink(t.url);};meta.append(link);}
     content.append(title,meta);const p=el('span','priority p'+t.priority,'P'+t.priority),del=el('button','delete','×');del.setAttribute('aria-label',t.title+' 삭제');
-    del.onclick=()=>{state.tasks=state.tasks.filter(x=>x.id!==t.id);if(t.source!=='manual')state.dismissed.push(t.id);save();};row.append(cb,content,p,del);$('tasks').append(row);
+    del.onclick=()=>{state.tasks=state.tasks.filter(x=>x.id!==t.id);if(t.source!=='manual')state.dismissed.push(t.id);save();};const star=el('button','source-link',t.coreDay===PikaDayTools.localDay()?'★ 핵심':'☆ 핵심');star.setAttribute('aria-label',t.title+' 핵심 선택');star.onclick=()=>toggleCore(t.id);row.append(cb,content,star,p,del);$('tasks').append(row);
   }
   if(!visible.length)$('tasks').append(el('div','empty',filter==='done'?'완료한 일들이 여기에 모여요 🌱':filter==='urgent'?'급한 할 일이 없어요. 차근차근 해봐요 🌱':'할 일을 추가하거나 업무 서비스를 연결해 주세요 ⚡'));
   if(desktop?.publishCompanion){const snapshot={tasks:state.tasks,meetings:state.meetings,image:$('personal-picture').getAttribute('src'),mood,greeting,message,checkedAt:state.checkedAt},serialized=JSON.stringify(snapshot);if(serialized!==lastCompanionSnapshot){lastCompanionSnapshot=serialized;desktop.publishCompanion(snapshot);}}
@@ -127,7 +127,7 @@ function applySync(data, quiet=false) {
       state.tasks.push({...t,done:false});state.seen.push(t.id);newTasks.push(t);
     }
   }
-  if(newTasks.length){const p1=newTasks.filter(t=>t.priority===1).length;const groups=['slack','gmail','jira','obsidian'].map(s=>{const n=newTasks.filter(t=>t.source===s).length;return n?`${names[s]} ${n}개`:null;}).filter(Boolean).join(' · ');const body=`${groups}. P1 ${p1}개, P2 ${newTasks.length-p1}개를 모았어요.`;addAlert(`새 할 일 ${newTasks.length}개를 발견했어요`,body);state.alerts[0].count=newTasks.length;notify(PikaDialogue.pick(newTasks.length>=3?'surprised':'excited'),body);}
+  if(newTasks.length){const p1=newTasks.filter(t=>t.priority===1).length;const groups=['slack','gmail','jira','obsidian'].map(s=>{const n=newTasks.filter(t=>t.source===s).length;return n?`${names[s]} ${n}개`:null;}).filter(Boolean).join(' · ');const body=`${groups}. P1 ${p1}개, P2 ${newTasks.length-p1}개를 모았어요.`;addAlert(`새 할 일 ${newTasks.length}개를 발견했어요`,body);state.alerts[0].count=newTasks.length;const first=newTasks.filter(t=>t.priority===1),second=newTasks.filter(t=>t.priority!==1);if(first.length)notify(PikaDialogue.pick('determined'),`새 P1 ${first.length}개: ${first.map(t=>t.title).join(' · ').slice(0,240)}`,1,first.length);if(second.length)notify(PikaDialogue.pick('excited'),`새 P2 ${second.length}개: ${second.map(t=>t.title).join(' · ').slice(0,240)}`,2,second.length);}
   if(calendarChanged)saveMeetings();save();
   if(!quiet)toast(newTasks.length?`새 할 일 ${newTasks.length}개를 모았어요.`:data.results.some(p=>p.status==='connected')?'최근 업무를 확인했어요. 새로운 할 일은 없어요.':'아직 연결된 서비스가 없어요. 연결 안내를 확인해 주세요.');
 }
@@ -156,6 +156,7 @@ if(desktop){desktop.onCompanionCommand?.(command=>{lastInteraction=Date.now();
   task.done=!!command.done;task.completedAt=task.done?new Date().toISOString():null;
   if(task.done){const n=state.tasks.filter(t=>t.done).length,total=state.tasks.length;forcedEmotion={mood:'happy',title:PikaDialogue.pick(n===total?'complete':n>=total/2?'halfway':'step')+` (${n}/${total})`,body:'피카츄가 힘껏 응원하고 있어요 ⚡',until:Date.now()+30000};}else forcedEmotion=null;
   save();
+ }else if(command.type==='toggle-core'){toggleCore(command.id);
  }else if(command.type==='add-task'){
   const title=typeof command.title==='string'?command.title.trim().slice(0,140):'';if(!title)return;
   state.tasks.push({id:crypto.randomUUID(),title,priority:command.priority===1?1:2,done:false,source:'manual'});save();
@@ -205,6 +206,10 @@ $('obsidian-choose').onclick=async()=>{if(!desktop)return;$('obsidian-choose').d
 $('obsidian-clear').onclick=async()=>{if(!desktop)return;await desktop.clearObsidian();state.tasks=state.tasks.filter(t=>t.source!=='obsidian');state.providers=state.providers.filter(p=>p.source!=='obsidian');state.seen=state.seen.filter(id=>!id.startsWith('obsidian:'));state.dismissed=state.dismissed.filter(id=>!id.startsWith('obsidian:'));save();await refreshObsidianStatus();toast('보관함 연결을 해제했어요.');};
 
 function updateFocusRecord(data){$('focus-record').textContent=`오늘 집중 ${data.minutes}분 · 완료한 세션 ${data.completed}회${data.active?' · 집중 중':''}`;}
-async function refreshProductivityStatus(){try{const data=await desktop.productivityStatus();$('quiet-enabled').checked=data.settings.quietEnabled;$('quiet-start').value=data.settings.quietStart;$('quiet-end').value=data.settings.quietEnd;updateFocusRecord(data.focus);}catch{toast('알림 설정을 확인하지 못했어요.');}}
-$('quiet-form').onsubmit=async e=>{e.preventDefault();const result=await desktop.saveProductivitySettings({quietEnabled:$('quiet-enabled').checked,quietStart:$('quiet-start').value,quietEnd:$('quiet-end').value});toast(result.ok?'알림 설정을 저장했어요.':result.error||'설정을 저장하지 못했어요.');};
+async function refreshProductivityStatus(){try{const data=await desktop.productivityStatus();$('quiet-enabled').checked=data.settings.quietEnabled;$('quiet-start').value=data.settings.quietStart;$('quiet-end').value=data.settings.quietEnd;$('notification-mode').value=data.settings.notificationMode;$('pet-scale').value=data.settings.petScale;$('position-locked').checked=data.settings.positionLocked;$('size-locked').checked=data.settings.sizeLocked;const startup=await desktop.startupStatus();$('startup-enabled').checked=startup.enabled;$('startup-enabled').disabled=!startup.supported;updateFocusRecord(data.focus);}catch{toast('알림 설정을 확인하지 못했어요.');}}
+$('quiet-form').onsubmit=async e=>{e.preventDefault();const result=await desktop.saveProductivitySettings({notificationMode:$('notification-mode').value,petScale:Number($('pet-scale').value),positionLocked:$('position-locked').checked,sizeLocked:$('size-locked').checked,quietEnabled:$('quiet-enabled').checked,quietStart:$('quiet-start').value,quietEnd:$('quiet-end').value});toast(result.ok?'알림 설정을 저장했어요.':result.error||'설정을 저장하지 못했어요.');};
 $('save-summary').onclick=async()=>{const result=await desktop.saveSummary();$('summary-status').textContent=result.ok?`저장 완료 · ${result.file}`:result.error;};
+
+function toggleCore(id){const task=state.tasks.find(t=>t.id===id),day=PikaDayTools.localDay();if(!task)return;if(task.coreDay===day)task.coreDay=null;else{if(state.tasks.filter(t=>t.coreDay===day).length>=3){toast('오늘의 핵심은 최대 3개예요. 기존 선택을 해제해 주세요.');return;}task.coreDay=day;}save();}
+
+$('startup-enabled').onchange=async()=>{const result=await desktop.setStartup($('startup-enabled').checked);if(!result.ok){$('startup-enabled').checked=!$('startup-enabled').checked;toast(result.error);}else toast('Windows 시작 시 실행 설정을 저장했어요.');};

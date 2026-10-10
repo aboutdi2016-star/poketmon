@@ -5,7 +5,7 @@ function quietNow(settings,date=new Date()){
  if(!settings?.quietEnabled)return false;const parse=t=>Number(t.slice(0,2))*60+Number(t.slice(3)),start=parse(settings.quietStart),end=parse(settings.quietEnd),now=date.getHours()*60+date.getMinutes();return start===end||start<end?(start===end||now>=start&&now<end):(now>=start||now<end);
 }
 function createProductivity(file,clock=Date.now){
- let data={settings:{quietEnabled:false,quietStart:'21:00',quietEnd:'09:00'},sessions:[],active:null,snoozed:[]};try{const saved=JSON.parse(fs.readFileSync(file,'utf8'));data={...data,...saved,settings:{...data.settings,...saved.settings}};}catch{}
+ let data={settings:{quietEnabled:false,quietStart:'21:00',quietEnd:'09:00',notificationMode:'all',petScale:1,positionLocked:false,sizeLocked:false},sessions:[],active:null,snoozed:[],digest:[]};try{const saved=JSON.parse(fs.readFileSync(file,'utf8'));data={...data,...saved,settings:{...data.settings,...saved.settings}};}catch{}
  function persist(){fs.writeFileSync(file+'.tmp',JSON.stringify(data),{mode:0o600});fs.renameSync(file+'.tmp',file);}
  function finish(reason='stopped'){if(!data.active)return null;const active=data.active,end=Math.min(clock(),active.endAt),seconds=Math.max(0,Math.floor((end-active.startedAt)/1000));const session={id:active.id,startedAt:active.startedAt,endAt:end,seconds,completed:reason==='completed',taskCount:active.taskCount,day:localDay(new Date(active.startedAt))};data.sessions.push(session);data.sessions=data.sessions.slice(-1500);data.active=null;persist();return session;}
  function tick(){return data.active&&clock()>=data.active.endAt?finish('completed'):null;}
@@ -13,7 +13,10 @@ function createProductivity(file,clock=Date.now){
  if(data.active){data.active=null;persist();}
  return {
   settings(){return {...data.settings};},
-  saveSettings(input){const time=/^(?:[01]\d|2[0-3]):[0-5]\d$/;if(!time.test(input?.quietStart)||!time.test(input?.quietEnd))throw new Error('조용한 시간은 HH:MM 형식으로 입력해 주세요.');data.settings={quietEnabled:!!input.quietEnabled,quietStart:input.quietStart,quietEnd:input.quietEnd};persist();return this.settings();},
+  saveSettings(input){const time=/^(?:[01]\d|2[0-3]):[0-5]\d$/;if(!time.test(input?.quietStart)||!time.test(input?.quietEnd))throw new Error('조용한 시간은 HH:MM 형식으로 입력해 주세요.');const mode=input.notificationMode??data.settings.notificationMode,scale=Number(input.petScale??data.settings.petScale);if(!['all','priority','meetings'].includes(mode)||![0.75,1,1.25,1.5].includes(scale))throw new Error('알림 모드 또는 크기가 올바르지 않아요.');if(data.settings.sizeLocked&&scale!==data.settings.petScale)throw new Error('크기 잠금을 먼저 해제해 주세요.');data.settings={notificationMode:mode,petScale:scale,positionLocked:!!(input.positionLocked??data.settings.positionLocked),sizeLocked:!!(input.sizeLocked??data.settings.sizeLocked),quietEnabled:!!input.quietEnabled,quietStart:input.quietStart,quietEnd:input.quietEnd};if(mode!=='priority')data.digest=[];persist();return this.settings();},
+  route(priority=2,meeting=false){if(this.quiet())return 'silent';if(meeting)return 'immediate';return data.settings.notificationMode==='meetings'?'silent':data.settings.notificationMode==='priority'&&priority!==1?'digest':'immediate';},
+  queueDigest(item){data.digest.push({at:clock(),body:String(item.body).slice(0,300),count:Number(item.count)||1});data.digest=data.digest.slice(-100);persist();},
+  flushDigest(){if(this.quiet()||data.settings.notificationMode!=='priority'||!data.digest.length||clock()-data.digest[0].at<3600000)return null;const items=data.digest;data.digest=[];persist();return {count:items.reduce((n,i)=>n+i.count,0),body:items.map(i=>i.body).slice(-3).join('\n')};},
   quiet(){return quietNow(data.settings,new Date(clock()));},
   focus(start,taskCount=0){if(!start)return finish();if(data.active)return data.active;data.active={id:randomUUID(),startedAt:clock(),endAt:clock()+25*60000,taskCount:Number.isFinite(taskCount)?taskCount:0};persist();return data.active;},
   tick,stop:finish,
