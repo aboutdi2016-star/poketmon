@@ -38,7 +38,7 @@ let facePreview=null, focusUntil=0, restUntil=0, lastInteraction=Date.now();
 function expression(mood) {
   const face=PikaFaces.get(mood);
   const showPicture=!!personalPicture&&pictureMode==='picture'&&!facePreview;
-  $('personal-picture').hidden=!showPicture;document.querySelector('.captain-art').hidden=showPicture;
+  $('personal-picture').hidden=!showPicture;document.querySelector('.captain-art').toggleAttribute('hidden',showPicture);
   if(showPicture&&$('personal-picture').getAttribute('src')!==personalPicture.src)$('personal-picture').src=personalPicture.src;
   for(const id of ['show-picture','show-expressions','remove-picture'])$(id).hidden=!personalPicture;
   $('show-picture').setAttribute('aria-pressed',String(showPicture));$('show-expressions').setAttribute('aria-pressed',String(!showPicture));
