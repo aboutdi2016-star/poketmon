@@ -42,6 +42,7 @@ jobs:
           Copy-Item README.md dist/PikaDay-win32-x64/README-ko.md
           Rename-Item dist/PikaDay-win32-x64 PikaDay
           Compress-Archive -Path dist/PikaDay -DestinationPath dist/PikaDay-Windows-x64.zip
+          Compress-Archive -Path assets/characters/*.png -DestinationPath dist/PikaDay-Transparent-Images.zip
           $digest = (Get-FileHash dist/PikaDay-Windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -Path dist/PikaDay-Windows-x64.sha256 -Value "$digest  PikaDay-Windows-x64.zip" -Encoding ascii
       - name: Publish GitHub release
@@ -57,5 +58,5 @@ jobs:
             gh release create $env:RELEASE_TAG --repo $env:RELEASE_REPO --verify-tag --title "피카 데이 $env:RELEASE_TAG" --notes-file .github/release-notes.md
             if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }
           }
-          gh release upload $env:RELEASE_TAG dist/PikaDay-Windows-x64.zip dist/PikaDay-Windows-x64.sha256 --repo $env:RELEASE_REPO --clobber
+          gh release upload $env:RELEASE_TAG dist/PikaDay-Windows-x64.zip dist/PikaDay-Windows-x64.sha256 dist/PikaDay-Transparent-Images.zip --repo $env:RELEASE_REPO --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }

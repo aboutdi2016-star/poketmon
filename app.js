@@ -32,21 +32,24 @@ function notify(title,body) {
   if(desktop) desktop.notify(title,body);
   else if('Notification' in window && Notification.permission==='granted')new Notification(title,{body});
 }
+const characterImages={sleepy:'/assets/characters/sleepy.png',tired:'/assets/characters/tired.png',surprised:'/assets/characters/surprised.png',angry:'/assets/characters/angry.png'};
+const captainImage='/assets/characters/captain.png';
 let personalPicture=null, pictureMode='expressions';
+try{pictureMode=localStorage.getItem('pika-day-picture-mode')||'expressions';}catch{}
 try{const picture=JSON.parse(localStorage.getItem('pika-day-picture-v1')||'null');if(picture&&/^data:image\/(png|jpeg|webp);base64,/.test(picture.src)){personalPicture=picture;pictureMode=localStorage.getItem('pika-day-picture-mode')||'picture';}}catch{}
 let facePreview=null, focusUntil=0, restUntil=0, lastInteraction=Date.now();
 function expression(mood) {
   const face=PikaFaces.get(mood);
-  const showPicture=!!personalPicture&&pictureMode==='picture'&&!facePreview;
-  $('personal-picture').hidden=!showPicture;document.querySelector('.captain-art').toggleAttribute('hidden',showPicture);
-  if(showPicture&&$('personal-picture').getAttribute('src')!==personalPicture.src)$('personal-picture').src=personalPicture.src;
-  for(const id of ['show-picture','show-expressions','remove-picture'])$(id).hidden=!personalPicture;
+  const showPicture=pictureMode==='picture'&&!facePreview;
+  const src=showPicture?(personalPicture?.src||captainImage):(characterImages[mood]||captainImage);
+  $('personal-picture').hidden=false;document.querySelector('.captain-art').toggleAttribute('hidden',true);
+  if($('personal-picture').getAttribute('src')!==src)$('personal-picture').src=src;
+  $('personal-picture').alt=showPicture&&personalPicture?'사용자가 선택한 메인 이미지':characterImages[mood]?face.label+' 표정의 원본 피카츄':'원본 캡틴 피카츄';
+  $('show-picture').hidden=false;$('show-expressions').hidden=false;$('remove-picture').hidden=!personalPicture;
+  $('show-picture').textContent=personalPicture?'내 그림 보기':'캡틴 보기';
   $('show-picture').setAttribute('aria-pressed',String(showPicture));$('show-expressions').setAttribute('aria-pressed',String(!showPicture));
   document.querySelector('.art').dataset.emotion=mood;
-  document.querySelector('.art').setAttribute('aria-label',face.label+' 표정의 캡틴 피카츄');
-  $('eyes').innerHTML=face.eyes;$('brows').innerHTML=face.brows;
-  $('mouth').innerHTML=face.mouth;$('ears').innerHTML=face.ears;$('face-extra').innerHTML=face.extra;
-  $('emotion').textContent=(facePreview?'미리보기 · ':showPicture?'내 그림 · ':'')+face.label+' · '+face.caption;
+  $('emotion').textContent=(facePreview?'미리보기 · ':showPicture?'메인 이미지 · ':'')+face.label+' · '+face.caption;
   document.querySelectorAll('.face-choice').forEach(b=>{b.classList.toggle('selected',b.dataset.face===facePreview);b.setAttribute('aria-pressed',String(b.dataset.face===facePreview));});
   $('focus-toggle').textContent=Date.now()<focusUntil?'집중 마치기':'⚡ 집중하기';
   $('rest-toggle').textContent=Date.now()<restUntil?'쉬기 마치기':'☁ 잠깐 쉬기';
@@ -177,4 +180,4 @@ $('picture-file').onchange=async()=>{
   personalPicture=next;pictureMode='picture';facePreview=null;renderTasks();toast('원본 이미지로 메인 캐릭터를 바꿨어요.');
  }catch(error){toast(error.message);}finally{$('picture-file').value='';}
 };
-$('personal-picture').onerror=()=>{pictureMode='expressions';renderTasks();toast('저장된 이미지를 표시하지 못했어요. 다시 선택해 주세요.');};
+$('personal-picture').onerror=()=>{if($('personal-picture').getAttribute('src')===captainImage){toast('기본 이미지를 불러오지 못했어요. 앱을 다시 실행해 주세요.');return;}pictureMode='expressions';facePreview=null;personalPicture=null;$('personal-picture').src=captainImage;toast('이미지를 표시하지 못해 기본 캡틴 이미지로 돌아왔어요.');};

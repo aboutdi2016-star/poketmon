@@ -5,6 +5,7 @@ const { collect } = require('./integrations.cjs');
 function startServer({port = 3000, host = '127.0.0.1', getCredentials = () => process.env} = {}) {
   let inFlight;
   const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/expressions.js': ['expressions.js', 'text/javascript; charset=utf-8'] };
+  for (const name of ['captain','sleepy','tired','surprised','angry']) files[`/assets/characters/${name}.png`]=[`assets/characters/${name}.png`,'image/png'];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     res.setHeader('X-Content-Type-Options', 'nosniff');
