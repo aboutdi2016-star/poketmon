@@ -36,7 +36,7 @@ let facePreview=null, focusUntil=0, restUntil=0, lastInteraction=Date.now();
 function expression(mood) {
   const face=PikaFaces.get(mood);
   document.querySelector('.art').dataset.emotion=mood;
-  document.querySelector('.art').setAttribute('aria-label',face.label+' 표정의 피카츄');
+  document.querySelector('.art').setAttribute('aria-label',face.label+' 표정의 캡틴 피카츄');
   $('eyes').innerHTML=face.eyes;$('brows').innerHTML=face.brows;
   $('mouth').innerHTML=face.mouth;$('ears').innerHTML=face.ears;$('face-extra').innerHTML=face.extra;
   $('emotion').textContent=(facePreview?'미리보기 · ':'')+face.label+' · '+face.caption;
@@ -147,3 +147,4 @@ $('face-auto').onclick=()=>{facePreview=null;renderTasks();};
 $('focus-toggle').onclick=()=>{facePreview=null;forcedEmotion=null;restUntil=0;focusUntil=Date.now()<focusUntil?0:Date.now()+25*60000;renderTasks();};
 $('rest-toggle').onclick=()=>{facePreview=null;forcedEmotion=null;focusUntil=0;restUntil=Date.now()<restUntil?0:Date.now()+5*60000;renderTasks();};
 document.addEventListener('pointerdown',()=>{lastInteraction=Date.now();},{passive:true});document.addEventListener('keydown',()=>{lastInteraction=Date.now();},{passive:true});
+

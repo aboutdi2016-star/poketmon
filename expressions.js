@@ -3,7 +3,7 @@
  const normalEyes='<ellipse cx="103" cy="139" rx="10" ry="13" fill="#39382e"/><ellipse cx="175" cy="139" rx="10" ry="13" fill="#39382e"/><circle cx="100" cy="135" r="3.7" fill="white"/><circle cx="172" cy="135" r="3.7" fill="white"/>';
  const smile='<path d="M123 164q8 8 15 0q8 8 16 0q-2 23-16 24q-13-2-15-24" fill="#8c443b" stroke="#675337" stroke-width="2"/><path d="M129 180q9-7 18 0q-8 12-18 0" fill="#ec8a84"/>';
  const calm='<path d="M124 166q7 9 14 0q8 9 16 0" stroke="#675337" stroke-width="3" fill="none" stroke-linecap="round"/>';
- const uprightEars='<path d="M83 105Q49 67 54 14Q84 31 106 90M164 85Q178 35 218 10Q228 54 190 106" fill="#ffdd4f" stroke="#675337" stroke-width="3"/><path d="M54 14Q51 34 57 50L77 43Q68 24 54 14M218 10Q224 27 219 46L200 35Q207 19 218 10" fill="#49483a"/>';
+ const uprightEars='<path d="M92 107Q46 99 29 53Q65 48 110 88M169 88Q211 44 250 53Q240 96 187 111" fill="url(#pika-yellow)" stroke="#675337" stroke-width="3"/><path d="M29 53Q36 77 50 86L63 65Q44 52 29 53M250 53Q242 79 226 88L213 65Q233 51 250 53" fill="#32372d"/>';
  const droopEars='<path d="M106 94Q70 73 53 96Q42 128 56 155Q77 155 79 123L107 104M165 95Q199 73 220 98Q234 128 219 155Q199 154 198 125L172 108" fill="#ffdd4f" stroke="#675337" stroke-width="3"/><path d="M50 131Q47 144 56 155Q67 155 73 142L74 129M223 132Q230 143 219 155Q207 154 202 142L203 130" fill="#49483a"/>';
  const flatEars='<path d="M100 105Q70 77 18 87Q26 105 76 114M170 102Q205 76 261 88Q251 108 198 116" fill="#ffdd4f" stroke="#675337" stroke-width="3"/><path d="M18 87l22-2 6 19Q25 103 18 87M261 88l-22-2-7 20Q251 106 261 88" fill="#49483a"/>';
  const faces={
