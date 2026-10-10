@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('pikaDesktop', {
   saveCredentials: input => ipcRenderer.invoke('credentials:save',input),
   clearCredentials: () => ipcRenderer.invoke('credentials:clear'),
   onSync: callback => { ipcRenderer.on('sync:update', (_event, data) => callback(data)); },
+  publishCompanion: snapshot => ipcRenderer.send('companion:publish', snapshot),
+  onCompanionCommand: callback => { ipcRenderer.on('companion:command', (_event, data) => callback(data)); },
   loadMeetings: () => ipcRenderer.invoke('meetings:load'),
   saveMeetings: items => ipcRenderer.invoke('meetings:save', items),
   openLink: url => ipcRenderer.invoke('link:open', url),

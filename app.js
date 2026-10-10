@@ -16,7 +16,7 @@ let state = load();
 for (const key of ['seen','dismissed','reminded','providers']) if(!Array.isArray(state[key])) state[key]=[];
 state.tasks = state.tasks.map(t=>({...t,priority:t.priority===3?2:t.priority})).filter(t => typeof t.id==='string' && typeof t.title==='string' && [1,2,3].includes(t.priority));
 state.meetings = state.meetings.filter(m=>typeof m.id==='string'&&typeof m.title==='string'&&Number.isFinite(Date.parse(m.start)));
-let filter='all', syncing=false, syncError=false, toastTimer, forcedEmotion=null;
+let filter='all', syncing=false, syncError=false, toastTimer, forcedEmotion=null,lastCompanionSnapshot='';
 function persist() { try { localStorage.setItem(KEY,JSON.stringify(state)); } catch { storageOkay=false; toast('저장이 불가능해 현재 화면에만 유지돼요.'); } }
 function save() { persist(); render(); }
 function toast(message) { $('toast').textContent=message; $('toast').style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').style.display='none',4000); }
@@ -81,6 +81,7 @@ function renderTasks() {
     del.onclick=()=>{state.tasks=state.tasks.filter(x=>x.id!==t.id);if(t.source!=='manual')state.dismissed.push(t.id);save();};row.append(cb,content,p,del);$('tasks').append(row);
   }
   if(!visible.length)$('tasks').append(el('div','empty',filter==='done'?'완료한 일들이 여기에 모여요 🌱':filter==='urgent'?'급한 할 일이 없어요. 차근차근 해봐요 🌱':'할 일을 추가하거나 업무 서비스를 연결해 주세요 ⚡'));
+  if(desktop?.publishCompanion){const snapshot={tasks:state.tasks,meetings:state.meetings,image:$('personal-picture').getAttribute('src'),mood,greeting,message,checkedAt:state.checkedAt},serialized=JSON.stringify(snapshot);if(serialized!==lastCompanionSnapshot){lastCompanionSnapshot=serialized;desktop.publishCompanion(snapshot);}}
 }
 function renderConnections() {
   $('services').replaceChildren();
@@ -145,7 +146,20 @@ $('demo').onclick=()=>{if(state.tasks.some(t=>t.demo)){state.tasks=state.tasks.f
  state.tasks.push(...sample.map(([title,source,priority],i)=>({id:'demo:'+i,title,source,priority,done:i>=4,demo:true})));
  state.meetings.push({id:'demo:meeting',title:'주간 팀 미팅',start:new Date(Date.now()+11*60000).toISOString(),url:null,source:'manual',demo:true});addAlert('예시 · 새 할 일 요약','Slack 2개, Gmail 1개가 새로 생겼어요. P1 2개, P2 1개를 확인해 보세요.','demo');$('demo').textContent='예시 지우기';saveMeetings();save();toast('예시 데이터로 기능을 체험할 수 있어요.');};
 $('date').textContent=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'long'}).format(new Date())+' · MY LITTLE DAILY COMPANION';
-if(desktop){desktop.onReminder(remind);desktop.onSync(data=>applySync(data,true));desktop.loadMeetings().then(meetings=>{if(meetings.length){state.meetings=meetings;save();}else saveMeetings();}).catch(()=>toast('저장된 회의를 불러오지 못했어요.'));}
+if(desktop){desktop.onCompanionCommand?.(command=>{
+ if(command.type==='toggle-task'){
+  const task=state.tasks.find(t=>t.id===command.id);if(!task)return;
+  task.done=!!command.done;
+  if(task.done){const n=state.tasks.filter(t=>t.done).length,total=state.tasks.length;forcedEmotion={mood:'happy',title:n===total?`모두 해냈어요! (${n}/${total})`:n>=total/2?`벌써 절반 했어요! (${n}/${total})`:`한 걸음 더 해냈어요! (${n}/${total})`,body:'피카츄가 힘껏 응원하고 있어요 ⚡',until:Date.now()+30000};}else forcedEmotion=null;
+  save();
+ }else if(command.type==='add-task'){
+  const title=typeof command.title==='string'?command.title.trim().slice(0,140):'';if(!title)return;
+  state.tasks.push({id:crypto.randomUUID(),title,priority:command.priority===1?1:2,done:false,source:'manual'});save();
+ }else if(command.type==='sync')sync(true);
+ else if(command.type==='settings')$('settings').click();
+ else if(command.type==='focus')$('focus-toggle').click();
+ else if(command.type==='rest')$('rest-toggle').click();
+});desktop.onReminder(remind);desktop.onSync(data=>applySync(data,true));desktop.loadMeetings().then(meetings=>{if(meetings.length){state.meetings=meetings;save();}else saveMeetings();}).catch(()=>toast('저장된 회의를 불러오지 못했어요.'));}
 render();if(state.tasks.some(t=>t.demo))$('demo').textContent='예시 지우기';if(!storageOkay)toast('기기 저장을 사용할 수 없어요.');sync(true);checkReminders();
 setInterval(()=>{checkReminders();renderMeetings();if(forcedEmotion&&Date.now()>=forcedEmotion.until)forcedEmotion=null;renderTasks();},15000);
 if(!desktop)setInterval(()=>{if(state.providers.some(p=>p.status==='connected'))sync(true);},300000);
