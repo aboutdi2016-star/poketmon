@@ -1,5 +1,5 @@
 const fs = require('node:fs');
-const ALLOWED = ['SLACK_USER_TOKEN','GMAIL_ACCESS_TOKEN','JIRA_ACCESS_TOKEN','JIRA_CLOUD_ID'];
+const ALLOWED = ['SLACK_USER_TOKEN','GMAIL_ACCESS_TOKEN','JIRA_ACCESS_TOKEN','JIRA_CLOUD_ID','GOOGLE_REFRESH_TOKEN','GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET'];
 function createVault(safeStorage, file) {
  function available() { return safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || !safeStorage.getSelectedStorageBackend || safeStorage.getSelectedStorageBackend() !== 'basic_text'); }
  function read() { if (!fs.existsSync(file))return {}; if(!available())throw new Error('Secure storage unavailable'); return JSON.parse(safeStorage.decryptString(Buffer.from(fs.readFileSync(file,'utf8'),'base64'))); }

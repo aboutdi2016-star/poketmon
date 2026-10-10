@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, shell, safeStorage, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, shell, safeStorage, screen, dialog, powerMonitor } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { startServer } = require('./server.cjs');
@@ -6,7 +6,12 @@ const { createVault } = require('./credentials.cjs');
 const { dueReminders, validateMeetings } = require('./reminders.cjs');
 const { collect, safeUrl } = require('./integrations.cjs');
 const { cleanSnapshot, completionCheer, clampBounds, popoverBounds } = require('./companion.cjs');
-let window, pet, popover, tray, server, timer, syncTimer, bubbleTimer, quitting=false, ready=false;
+const { createObsidian } = require('./obsidian.cjs');
+const dialogue = require('./dialogue.js');
+const {createGoogleAuth}=require('./google-auth.cjs');
+const {createProductivity}=require('./productivity.cjs');
+const {localDay,todayTask}=require('./day.js');
+let window, pet, popover, tray, server, timer, syncTimer, bubbleTimer, productivity, quitting=false, ready=false;
 let meetings=[],reminded=new Set(),snapshot=null,popup={mode:'panel'},drag=null,bubbles=[],pinned=true;
 const lock=app.requestSingleInstanceLock();
 if(!lock) app.quit();
@@ -16,6 +21,11 @@ else {
   if(process.platform==='win32')app.setAppUserModelId('PikaDay');
   const vault=createVault(safeStorage,path.join(app.getPath('userData'),'credentials.enc'));
   const getCredentials=()=>({...process.env,...vault.values()});
+  const google=createGoogleAuth({values:getCredentials,save:input=>vault.save(input)});
+  productivity=createProductivity(path.join(app.getPath('userData'),'productivity.json'));
+  const obsidian=createObsidian(path.join(app.getPath('userData'),'obsidian.json'));
+  async function collectAll(){const selected=obsidian.status().path;let env=getCredentials(),authError=null;try{env=await google.credentials();}catch(error){authError=error.message;env={...env,GMAIL_ACCESS_TOKEN:''};}const [remote,local]=await Promise.all([collect(env),obsidian.collect()]);if(authError)for(const result of remote.results.filter(p=>['gmail','calendar'].includes(p.source)))Object.assign(result,{status:'error',message:authError});return {...remote,results:[...remote.results,selected===obsidian.status().path?local:await obsidian.collect()]};}
+
   const scheduleFile=path.join(app.getPath('userData'),'meetings.json');
   const positionFile=path.join(app.getPath('userData'),'companion-position.json');
   try{const saved=JSON.parse(fs.readFileSync(scheduleFile,'utf8'));meetings=validateMeetings(saved.meetings);reminded=new Set(Array.isArray(saved.reminded)?saved.reminded:[]);}catch{}
@@ -28,14 +38,16 @@ else {
   function areaFor(bounds){return screen.getDisplayNearestPoint({x:bounds.x+Math.round(bounds.width/2),y:bounds.y+Math.round(bounds.height/2)}).workArea;}
   function anchorPopup(){if(!pet||!popover)return;const bounds=popoverBounds(pet.getBounds(),areaFor(pet.getBounds()),360,popup.mode==='bubble'?204:440),side=bounds.x<pet.getBounds().x?'right':'left',changed=popup.side!==side;popup.side=side;popover.setBounds(bounds);if(changed)send(popover,'companion:popup',popup);}
   function showDashboard(section){window.show();window.focus();hidePopup(false);if(section==='settings')send(window,'companion:command',{type:'settings'});}
-  function showPanel(){if(!ready)return;clearTimeout(bubbleTimer);if(popup.mode==='bubble')bubbles.unshift(popup);popup={mode:'panel'};anchorPopup();send(popover,'companion:popup',popup);popover.show();popover.focus();}
+  function showPanel(){if(!ready)return;send(window,'companion:command',{type:'activity'});clearTimeout(bubbleTimer);if(popup.mode==='bubble')bubbles.unshift(popup);popup={mode:'panel'};anchorPopup();send(popover,'companion:popup',popup);popover.show();popover.focus();}
   function hidePopup(advance=true){clearTimeout(bubbleTimer);popover?.hide();popup={mode:'panel'};if(advance)setTimeout(nextBubble,100);}
   function nextBubble(){
+   if(productivity.quiet())return;
    if(!ready||!pet.isVisible()||popover.isVisible()||!bubbles.length)return;
-   popup=bubbles.shift();anchorPopup();send(popover,'companion:popup',popup);popover.showInactive();
+   popup=bubbles.shift();if(popup.meetingId){const m=meetings.find(m=>m.id===popup.meetingId);if(!m||Date.now()>Date.parse(m.start)+600000){popup={mode:'panel'};nextBubble();return;}const minutes=Math.ceil((Date.parse(m.start)-Date.now())/60000);popup.body=`${m.title} · ${minutes>0?minutes+'분 후 시작해요.':'회의가 시작됐어요.'}`;}anchorPopup();send(popover,'companion:popup',popup);popover.showInactive();
    bubbleTimer=setTimeout(()=>{popover.hide();popup={mode:'panel'};nextBubble();},popup.meetingId?60000:12000);
   }
   function bubble(title,body,{meetingId=null,canJoin=false}={}){
+   if(productivity.quiet())return;
    const item={mode:'bubble',title:String(title).slice(0,150),body:String(body).slice(0,350),meetingId,canJoin};
    if(meetingId&&popover?.isVisible()&&popup.mode==='bubble'&&!popup.meetingId){clearTimeout(bubbleTimer);popover.hide();popup={mode:'panel'};}
    if(meetingId){bubbles=bubbles.filter(b=>b.meetingId!==meetingId);bubbles.unshift(item);}else bubbles.push(item);
@@ -43,7 +55,7 @@ else {
    nextBubble();
   }
   function nativeNote(title,body,meetingId=null){
-   if(!Notification.isSupported())return;
+   if(productivity.quiet()||!Notification.isSupported())return;
    const note=new Notification({title,body});
    note.on('click',()=>{const m=meetings.find(m=>m.id===meetingId);const url=safeUrl(m?.url);if(url)shell.openExternal(url);else showPanel();});note.show();
   }
@@ -63,8 +75,29 @@ else {
   ];}
   function refreshTray(){tray?.setContextMenu(Menu.buildFromTemplate(menuTemplate()));}
   ipcMain.handle('credentials:status',e=>isDashboard(e)?vault.status():null);
-  ipcMain.handle('credentials:save',(e,input)=>{if(!isDashboard(e))return {ok:false};try{return {ok:true,...vault.save(input)};}catch(error){return {ok:false,error:error.message};}});
-  ipcMain.handle('credentials:clear',e=>isDashboard(e)?vault.clear():null);
+  ipcMain.handle('credentials:save',(e,input)=>{if(!isDashboard(e))return {ok:false};try{google.reset();return {ok:true,...vault.save(input)};}catch(error){return {ok:false,error:error.message};}});
+  ipcMain.handle('credentials:clear',e=>{if(!isDashboard(e))return null;google.reset();return vault.clear();});
+  function broadcastFocus(){const state=productivity.summary();send(window,'focus:update',state);send(popover,'focus:update',state);return state;}
+  ipcMain.handle('productivity:status',e=>allowed(e)?{settings:productivity.settings(),focus:productivity.summary()}:null);
+  ipcMain.handle('productivity:settings',(e,input)=>{if(!isDashboard(e))return {ok:false};try{const settings=productivity.saveSettings(input);if(productivity.quiet()){bubbles=[];if(popup.mode==='bubble')hidePopup(false);}return {ok:true,settings};}catch(error){return {ok:false,error:error.message};}});
+  ipcMain.handle('focus:set',(e,start)=>{if(!isDashboard(e))return null;productivity.focus(!!start,snapshot?.tasks.filter(t=>t.done).length||0);return broadcastFocus();});
+  ipcMain.on('companion:snooze',e=>{if(!isCompanion(e)||popup.mode!=='bubble')return;productivity.snooze({...popup});hidePopup();});
+  ipcMain.handle('summary:save',async e=>{
+   if(!allowed(e))return {ok:false};
+   try{const day=localDay(),tasks=snapshot?.tasks||[],focus=productivity.summary(day),escape=s=>String(s).replace(/[\r\n]/g,' ').replace(/<!--/g,'&lt;!--');const completed=tasks.filter(t=>t.done&&t.completedAt&&localDay(new Date(t.completedAt))===day),remaining=tasks.filter(t=>!t.done&&(todayTask(t,day)||(!t.due&&!t.scheduled)));
+    const body=`# ${day} 하루 마무리\n\n집중 시간: ${focus.minutes}분 · 완료한 집중 세션: ${focus.completed}회\n\n## 오늘 완료한 일 (${completed.length})\n`+(completed.map(t=>'- [x] '+escape(t.title)).join('\n')||'- 기록된 완료가 없어요.')+`\n\n## 내일로 넘길 일 (${remaining.length})\n`+(remaining.map(t=>'- [ ] '+escape(t.title)).join('\n')||'- 남은 일이 없어요.');
+    const result=await obsidian.saveReport(day,body);return {ok:true,...result};
+   }catch(error){return {ok:false,error:error.message};}
+  });
+  ipcMain.handle('obsidian:status',e=>isDashboard(e)?obsidian.status():null);
+  ipcMain.handle('obsidian:choose',async e=>{
+   if(!isDashboard(e))return {ok:false};
+   const selected=await dialog.showOpenDialog(window,{title:'옵시디언 보관함 폴더 선택',properties:['openDirectory']});
+   if(selected.canceled)return {ok:false,canceled:true};
+   try{return {ok:true,...await obsidian.choose(selected.filePaths[0])};}catch(error){return {ok:false,error:error.message};}
+  });
+  ipcMain.handle('obsidian:clear',async e=>isDashboard(e)?obsidian.clear():null);
+  ipcMain.handle('obsidian:open',(e,id)=>{if(!allowed(e)||typeof id!=='string')return;const url=obsidian.noteUrl(id);if(url)return shell.openExternal(url);});
   ipcMain.handle('meetings:load',e=>isDashboard(e)?meetings:[]);
   ipcMain.handle('meetings:save',(e,items)=>{
    if(!isDashboard(e))return [];
@@ -80,14 +113,14 @@ else {
   ipcMain.on('companion:publish',(e,input)=>{
    if(!isDashboard(e))return;const next=cleanSnapshot(input),cheer=completionCheer(snapshot,next),previousMood=snapshot?.mood;snapshot=next;
    send(pet,'companion:state',snapshot);send(popover,'companion:state',snapshot);
-   if(cheer)bubble(cheer,'피카츄가 힘껏 응원하고 있어요 ⚡');
+   if(cheer){const done=next.tasks.filter(t=>t.done).length,total=next.tasks.length;const kind=done===total?'complete':done>=total/2?'halfway':'step';bubble(dialogue.pick(kind)+` (${done}/${total})`,dialogue.pick('happy'));}
    else if(ready&&next.mood!==previousMood&&['focused','goofy'].includes(next.mood))bubble(next.greeting,next.message);
   });
   ipcMain.on('companion:panel',e=>{if(isCompanion(e))showPanel();});
   ipcMain.on('companion:close',e=>{if(isCompanion(e))hidePopup();});
   ipcMain.on('companion:dashboard',(e,section)=>{if(isCompanion(e))showDashboard(section);});
   ipcMain.on('companion:command',(e,input)=>{
-   if(!isCompanion(e)||!['toggle-task','add-task','sync'].includes(input?.type))return;
+   if(!isCompanion(e)||!['toggle-task','add-task','sync','focus','rest'].includes(input?.type))return;
    if(input.type==='toggle-task'&&typeof input.id!=='string')return;
    send(window,'companion:command',{type:input.type,id:typeof input.id==='string'?input.id.slice(0,200):null,done:!!input.done,title:typeof input.title==='string'?input.title.slice(0,140):'',priority:input.priority===1?1:2});
   });
@@ -100,7 +133,7 @@ else {
    else if(data?.phase==='move'&&drag){const p=screen.getCursorScreenPoint(),b={...drag.bounds,x:drag.bounds.x+p.x-drag.point.x,y:drag.bounds.y+p.y-drag.point.y};pet.setBounds(clampBounds(b,screen.getDisplayNearestPoint(p).workArea));if(popover.isVisible())anchorPopup();}
    else if(data?.phase==='end'){drag=null;persistPosition();}
   });
-  server=await startServer({port:3417,getCredentials});const address=`http://127.0.0.1:${server.address().port}`;
+  server=await startServer({port:3417,getCredentials,collectData:collectAll});const address=`http://127.0.0.1:${server.address().port}`;
   const securePreferences=preload=>({preload:path.join(__dirname,preload),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false});
   window=new BrowserWindow({show:false,width:1240,height:940,minWidth:390,minHeight:600,title:'피카 데이',icon:path.join(__dirname,'assets','tray.png'),backgroundColor:'#f7f8f2',webPreferences:securePreferences('preload.cjs')});
   const area=screen.getPrimaryDisplay().workArea;
@@ -124,12 +157,14 @@ else {
   ready=true;pet.setAlwaysOnTop(true,'floating');popover.setAlwaysOnTop(true,'floating');pet.showInactive();refreshTray();
   send(pet,'companion:state',snapshot);send(popover,'companion:state',snapshot);
   const left=snapshot?.tasks.filter(t=>!t.done)||[],p1=left.filter(t=>t.priority===1).length;
-  bubble(left.length?'오늘의 할 일을 정리했어요 ⚡':'피카! 오늘도 함께할게요.',left.length?`남은 할 일 ${left.length}개 · P1 ${p1}개. 하나씩 함께 해봐요.`:'저를 클릭하면 할 일을 볼 수 있어요. 드래그해서 편한 곳으로 옮겨 주세요.');
-  syncTimer=setInterval(async()=>{try{send(window,'sync:update',await collect(getCredentials()));}catch{bubble('업무 수집을 다시 확인해 주세요.','설정에서 연결 상태를 확인할 수 있어요.');}},300000);
-  function checkMeetings(){for(const m of dueReminders(meetings,reminded)){reminded.add(`${m.id}:${m.start}`);persistMeetings();send(window,'reminder',m);const body=`${m.title} · ${Math.max(1,Math.ceil((Date.parse(m.start)-Date.now())/60000))}분 후 시작해요.`;bubble('⚡ 곧 회의가 시작돼요',body,{meetingId:m.id,canJoin:!!safeUrl(m.url)});nativeNote('⚡ 곧 회의가 시작돼요',body,m.id);}}
-  checkMeetings();timer=setInterval(checkMeetings,15000);
+  bubble(dialogue.pick('welcome'),left.length?`남은 할 일 ${left.length}개 · P1 ${p1}개. 하나씩 함께 해봐요.`:'저를 클릭하면 할 일을 볼 수 있어요. 드래그해서 편한 곳으로 옮겨 주세요.');
+  syncTimer=setInterval(async()=>{try{send(window,'sync:update',await collectAll(getCredentials()));}catch{bubble(dialogue.pick('angry'),'설정에서 연결 상태를 확인할 수 있어요.');}},300000);
+  function checkMeetings(){for(const m of dueReminders(meetings,reminded)){reminded.add(`${m.id}:${m.start}`);persistMeetings();send(window,'reminder',m);const body=`${m.title} · ${Math.max(1,Math.ceil((Date.parse(m.start)-Date.now())/60000))}분 후 시작해요.`;bubble(dialogue.pick('meeting'),body,{meetingId:m.id,canJoin:!!safeUrl(m.url)});nativeNote('⚡ 곧 회의가 시작돼요',body,m.id);}}
+  function tick(){checkMeetings();const finished=productivity.tick();broadcastFocus();if(finished)bubble(dialogue.pick('happy'),'25분 집중을 마쳤어요! 오늘의 집중 기록에 저장했어요.');for(const item of productivity.due()){if(item.meetingId){const m=meetings.find(m=>m.id===item.meetingId);if(!m||Date.parse(m.start)+600000<=Date.now())continue;}bubble(item.title,item.body,item);}nextBubble();}
+  powerMonitor.on('suspend',()=>{productivity.stop();broadcastFocus();});
+  tick();timer=setInterval(tick,15000);
  }).catch(error=>{console.error('데스크톱 시작 실패:',error.message);app.quit();});
- app.on('before-quit',()=>{quitting=true;clearInterval(timer);clearInterval(syncTimer);clearTimeout(bubbleTimer);server?.close();});
+ app.on('before-quit',()=>{quitting=true;productivity?.stop();clearInterval(timer);clearInterval(syncTimer);clearTimeout(bubbleTimer);server?.close();});
  app.on('window-all-closed',()=>{});
  app.on('activate',()=>{pet?.showInactive();pet?.setIgnoreMouseEvents(false);});
 }

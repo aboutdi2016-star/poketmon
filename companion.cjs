@@ -1,7 +1,7 @@
 const images = new Set(['captain', 'sleepy', 'tired', 'surprised', 'angry'].map(n => `/assets/characters/${n}.png`));
 const cleanText = (value, max) => typeof value === 'string' ? value.slice(0, max) : '';
 function cleanSnapshot(input) {
-  const tasks = (Array.isArray(input?.tasks) ? input.tasks : []).filter(t => typeof t?.id === 'string' && typeof t.title === 'string').slice(0, 500).map(t => ({id:t.id.slice(0,200),title:t.title.slice(0,140),done:!!t.done,priority:t.priority===1?1:2,source:cleanText(t.source,30),demo:!!t.demo}));
+  const tasks = (Array.isArray(input?.tasks) ? input.tasks : []).filter(t => typeof t?.id === 'string' && typeof t.title === 'string').slice(0, 6000).map(t => ({id:t.id.slice(0,200),title:t.title.slice(0,140),done:!!t.done,priority:t.priority===1?1:2,source:cleanText(t.source,30),demo:!!t.demo,due:cleanText(t.due,10),scheduled:cleanText(t.scheduled,10),todayTag:!!t.todayTag,completedAt:Number.isFinite(Date.parse(t.completedAt))?t.completedAt:null}));
   const meetings = (Array.isArray(input?.meetings) ? input.meetings : []).filter(m => typeof m?.id==='string' && Number.isFinite(Date.parse(m.start))).slice(0,200).map(m=>({id:m.id.slice(0,200),title:cleanText(m.title,140),start:m.start,url:typeof m.url==='string'&&/^https:\/\//.test(m.url)?m.url:null,demo:!!m.demo}));
   const image = images.has(input?.image) || (typeof input?.image==='string' && input.image.length<=5*1024*1024 && /^data:image\/(png|jpeg|webp);base64,[a-zA-Z0-9+/=]+$/.test(input.image)) ? input.image : '/assets/characters/captain.png';
   return {tasks,meetings,image,greeting:cleanText(input?.greeting,200),message:cleanText(input?.message,400),mood:cleanText(input?.mood,30),checkedAt:cleanText(input?.checkedAt,50)};

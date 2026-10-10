@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const desktop = window.pikaDesktop;
 const KEY = 'pika-day-state-v2';
-const names = {manual:'나의 할 일',slack:'Slack',gmail:'Gmail',jira:'Jira',calendar:'Google Calendar'};
+const names = {manual:'나의 할 일',slack:'Slack',gmail:'Gmail',jira:'Jira',calendar:'Google Calendar',obsidian:'Obsidian'};
 let storageOkay = true;
 function load() {
   try {
@@ -16,7 +16,7 @@ let state = load();
 for (const key of ['seen','dismissed','reminded','providers']) if(!Array.isArray(state[key])) state[key]=[];
 state.tasks = state.tasks.map(t=>({...t,priority:t.priority===3?2:t.priority})).filter(t => typeof t.id==='string' && typeof t.title==='string' && [1,2,3].includes(t.priority));
 state.meetings = state.meetings.filter(m=>typeof m.id==='string'&&typeof m.title==='string'&&Number.isFinite(Date.parse(m.start)));
-let filter='all', syncing=false, syncError=false, toastTimer, forcedEmotion=null,lastCompanionSnapshot='';
+let filter='all', syncing=false, syncError=false, toastTimer, forcedEmotion=null,lastCompanionSnapshot='',speechCache=null;
 function persist() { try { localStorage.setItem(KEY,JSON.stringify(state)); } catch { storageOkay=false; toast('저장이 불가능해 현재 화면에만 유지돼요.'); } }
 function save() { persist(); render(); }
 function toast(message) { $('toast').textContent=message; $('toast').style.display='block'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').style.display='none',4000); }
@@ -68,14 +68,16 @@ function renderTasks() {
   if(Date.now()<focusUntil){mood='focused';greeting='좋아요, 지금은 집중할 시간!';message='25분 동안 한 가지 일에 집중해 봐요. 피카츄가 응원할게요.';}
   if(forcedEmotion && Date.now()<forcedEmotion.until) {mood=forcedEmotion.mood;greeting=forcedEmotion.title;message=forcedEmotion.body;}
   if(facePreview){mood=facePreview;greeting=PikaFaces.get(mood).label+' 표정 미리보기';message=PikaFaces.get(mood).caption;}
+  if(!forcedEmotion&&!facePreview){const key=[mood,done,total,state.alerts.find(a=>!a.read&&a.type==='tasks')?.id||''].join(':');if(speechCache?.key!==key){speechCache={key,line:PikaDialogue.pick(mood==='happy'?(done===total?'complete':'halfway'):mood)};}greeting=speechCache.line+(mood==='happy'?` (${done}/${total})`:'');}
   expression(mood);$('greeting').textContent=greeting;$('message').textContent=message;
-  const visible=state.tasks.filter(t=>filter==='all'||(filter==='urgent'?!t.done&&t.priority===1:t.done)).slice().sort((a,b)=>Number(a.done)-Number(b.done)||a.priority-b.priority);
+  const visible=state.tasks.filter(t=>filter==='all'||(filter==='today'?PikaDayTools.todayTask(t):filter==='urgent'?!t.done&&t.priority===1:t.done)).slice().sort((a,b)=>Number(a.done)-Number(b.done)||a.priority-b.priority);
   $('tasks').replaceChildren();
   for(const t of visible){
     const row=el('div','task'+(t.done?' done':'')),cb=el('input','check');cb.type='checkbox';cb.checked=!!t.done;cb.setAttribute('aria-label',t.title+' 완료');
-    cb.onchange=()=>{t.done=cb.checked;if(t.done){const n=state.tasks.filter(x=>x.done).length;const message=n===total?`모두 해냈어요! (${n}/${total})`:n>=total/2?`벌써 절반 했어요! (${n}/${total})`:`한 걸음 더 해냈어요! (${n}/${total})`;forcedEmotion={mood:'happy',title:message,body:'피카츄가 힘껏 응원하고 있어요 ⚡',until:Date.now()+30000};toast(message);}else forcedEmotion=null;save();};
+    cb.onchange=()=>{t.done=cb.checked;t.completedAt=t.done?new Date().toISOString():null;if(t.done){const n=state.tasks.filter(x=>x.done).length;const message=PikaDialogue.pick(n===total?'complete':n>=total/2?'halfway':'step')+` (${n}/${total})`;forcedEmotion={mood:'happy',title:message,body:'피카츄가 힘껏 응원하고 있어요 ⚡',until:Date.now()+30000};toast(message);}else forcedEmotion=null;save();};
     const content=el('div','task-content'),title=el('div','task-title',t.title),meta=el('div','meta');
     meta.append(el('span','',`${t.demo?'예시 · ':''}${names[t.source]||'나의 할 일'}${t.candidate?' · 확인할 후보':''}${t.done?' · 완료':''}`));
+    if(t.source==='obsidian'&&desktop){const link=el('button','source-link','노트 열기 ↗');link.onclick=()=>desktop.openObsidian(t.id);meta.append(link);}
     if(validLink(t.url)){const link=el('a','source-link','원문 ↗');link.href=t.url;link.target='_blank';link.rel='noopener noreferrer';link.onclick=e=>{e.preventDefault();openLink(t.url);};meta.append(link);}
     content.append(title,meta);const p=el('span','priority p'+t.priority,'P'+t.priority),del=el('button','delete','×');del.setAttribute('aria-label',t.title+' 삭제');
     del.onclick=()=>{state.tasks=state.tasks.filter(x=>x.id!==t.id);if(t.source!=='manual')state.dismissed.push(t.id);save();};row.append(cb,content,p,del);$('tasks').append(row);
@@ -85,7 +87,7 @@ function renderTasks() {
 }
 function renderConnections() {
   $('services').replaceChildren();
-  for(const id of ['slack','gmail','calendar','jira']) {const provider=state.providers.find(p=>p.source===id),status=provider?.status||'disconnected',card=el('div','service '+status);card.append(el('b','',names[id]),el('span','',status==='connected'?'● 연결됨':status==='error'?'● 수집 오류':'○ 연결 필요'));card.title=provider?.message||'연결 설정이 필요해요.';$('services').append(card);}
+  for(const id of ['slack','gmail','calendar','jira','obsidian']) {const provider=state.providers.find(p=>p.source===id),status=provider?.status||'disconnected',card=el('div','service '+status);card.append(el('b','',names[id]),el('span','',status==='connected'?'● 연결됨':status==='error'?'● 수집 오류':'○ 연결 필요'));card.title=provider?.message||'연결 설정이 필요해요.';$('services').append(card);}
   const connected=state.providers.filter(p=>p.status==='connected').length,errors=state.providers.filter(p=>p.status==='error').length;
   $('sync-status').textContent=syncError?'수집 서버 연결 실패 · 앱 실행 상태를 확인해 주세요.':syncing?'최근 업무를 확인하고 있어요…':state.tasks.some(t=>t.demo)?'예시 체험 중 · 실제 계정에서 수집한 항목이 아닙니다.':connected?`${connected}개 서비스 확인 · ${state.checkedAt?new Date(state.checkedAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):''}${errors?' · 일부 수집 실패':''}`:errors?'수집 실패 · 연결 권한과 네트워크 설정을 확인해 주세요.':'계정 연결 후 실제 할 일을 모을 수 있어요.';
   $('sync').disabled=syncing;
@@ -117,25 +119,26 @@ function applySync(data, quiet=false) {
   for(const provider of data.results){
     if(provider.status!=='connected')continue;
     if(provider.source==='calendar') {state.meetings=state.meetings.filter(m=>m.source!=='calendar'||m.demo).concat(provider.items);calendarChanged=true;continue;}
+    if(provider.source==='obsidian'){const present=new Set(provider.presentIds||provider.items.map(t=>t.id)),completed=new Set(provider.completedIds||[]);state.tasks=state.tasks.filter(t=>t.source!=='obsidian'||present.has(t.id));state.seen=state.seen.filter(id=>!id.startsWith('obsidian:')||present.has(id));for(const t of state.tasks.filter(t=>t.source==='obsidian')){if(completed.has(t.id)){if(!t.done)t.completedAt=new Date().toISOString();t.done=true;t.sourceDone=true;}}}
     for(const t of provider.items){
       const existing=state.tasks.find(x=>x.id===t.id);
-      if(existing){Object.assign(existing,t,{done:existing.done});continue;}
+      if(existing){const done=t.source==='obsidian'&&existing.sourceDone?false:existing.done;Object.assign(existing,t,{done,sourceDone:false,completedAt:done?existing.completedAt:null});continue;}
       if(state.dismissed.includes(t.id)||state.seen.includes(t.id))continue;
       state.tasks.push({...t,done:false});state.seen.push(t.id);newTasks.push(t);
     }
   }
-  if(newTasks.length){const p1=newTasks.filter(t=>t.priority===1).length;const groups=['slack','gmail','jira'].map(s=>{const n=newTasks.filter(t=>t.source===s).length;return n?`${names[s]} ${n}개`:null;}).filter(Boolean).join(' · ');const body=`${groups}. P1 ${p1}개, P2 ${newTasks.length-p1}개를 모았어요.`;addAlert(`새 할 일 ${newTasks.length}개를 발견했어요`,body);state.alerts[0].count=newTasks.length;notify('피카! 새로운 할 일이 도착했어요',body);}
+  if(newTasks.length){const p1=newTasks.filter(t=>t.priority===1).length;const groups=['slack','gmail','jira','obsidian'].map(s=>{const n=newTasks.filter(t=>t.source===s).length;return n?`${names[s]} ${n}개`:null;}).filter(Boolean).join(' · ');const body=`${groups}. P1 ${p1}개, P2 ${newTasks.length-p1}개를 모았어요.`;addAlert(`새 할 일 ${newTasks.length}개를 발견했어요`,body);state.alerts[0].count=newTasks.length;notify(PikaDialogue.pick(newTasks.length>=3?'surprised':'excited'),body);}
   if(calendarChanged)saveMeetings();save();
   if(!quiet)toast(newTasks.length?`새 할 일 ${newTasks.length}개를 모았어요.`:data.results.some(p=>p.status==='connected')?'최근 업무를 확인했어요. 새로운 할 일은 없어요.':'아직 연결된 서비스가 없어요. 연결 안내를 확인해 주세요.');
 }
 async function sync(quiet=false){if(syncing)return;syncing=true;syncError=false;renderConnections();try{const response=await fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok)throw new Error('sync');applySync(await response.json(),quiet);}catch{syncError=true;if(!quiet)toast('수집 서버에 연결하지 못했어요. 앱 실행 상태를 확인해 주세요.');$('sync-status').textContent='수집 서버 연결 실패';}finally{syncing=false;renderConnections();}}
-function remind(m){facePreview=null;const key=`${m.id}:${m.start}`;const minutes=Math.max(1,Math.ceil((Date.parse(m.start)-Date.now())/60000));const body=`${m.title} · ${minutes}분 후 시작해요.${validLink(m.url)?' 참가 버튼으로 바로 들어가세요.':''}`;addAlert('곧 회의가 시작돼요 ⚡',body,'meeting',key);forcedEmotion={mood:'determined',title:'피카! 회의 시간이 다가와요.',body,until:Date.now()+600000};save();toast(body);}
+function remind(m){facePreview=null;const key=`${m.id}:${m.start}`;const minutes=Math.max(1,Math.ceil((Date.parse(m.start)-Date.now())/60000));const body=`${m.title} · ${minutes}분 후 시작해요.${validLink(m.url)?' 참가 버튼으로 바로 들어가세요.':''}`;addAlert('곧 회의가 시작돼요 ⚡',body,'meeting',key);forcedEmotion={mood:'determined',title:PikaDialogue.pick('meeting'),body,until:Date.now()+600000};save();toast(body);}
 function checkReminders(){if(desktop)return;for(const m of state.meetings){const start=Date.parse(m.start),key=`${m.id}:${m.start}`;if(Date.now()>=start-600000&&Date.now()<start&&!state.reminded.includes(key)){state.reminded.push(key);remind(m);notify('⚡ 곧 회의가 시작돼요',m.title);}}}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));renderTasks();});
 $('open').onclick=()=>{$('dialog').showModal();$('title').focus();};$('cancel').onclick=()=>{$('dialog').close();$('form').reset();};$('title').oninput=()=>$('title').setCustomValidity('');
 $('form').onsubmit=e=>{e.preventDefault();const title=$('title').value.trim();if(!title){$('title').setCustomValidity('할 일을 입력해 주세요.');$('title').reportValidity();return;}state.tasks.push({id:crypto.randomUUID(),title,priority:Number($('priority').value),done:false,source:'manual'});save();$('dialog').close();$('form').reset();toast('새로운 한 걸음을 추가했어요.');};
 $('clear').onclick=()=>{const done=state.tasks.filter(t=>t.done);if(!done.length){toast('아직 완료한 일이 없어요.');return;}state.dismissed.push(...done.filter(t=>t.source!=='manual').map(t=>t.id));state.tasks=state.tasks.filter(t=>!t.done);forcedEmotion=null;save();toast('완료한 일을 정리했어요.');};
-$('sync').onclick=()=>sync();$('settings').onclick=async()=>{$('settings-dialog').showModal();if(desktop){$('credentials-form').hidden=false;try{const status=await desktop.credentialStatus();$('credentials-status').textContent=status.secure?`안전한 저장소 사용 가능 · 저장된 연결 ${status.configured.length}개`:'이 기기에서 안전한 저장소를 사용할 수 없어요. 실행 환경 변수를 사용해 주세요.';}catch{$('credentials-status').textContent='연결 저장소를 확인하지 못했어요.';}}};$('settings-close').onclick=()=>{$('credentials-form').reset();$('settings-dialog').close();};$('settings-dialog').addEventListener('close',()=>$('credentials-form').reset());
+$('sync').onclick=()=>sync();$('settings').onclick=async()=>{$('settings-dialog').showModal();if(desktop){$('obsidian-settings').hidden=false;$('productivity-settings').hidden=false;refreshProductivityStatus();refreshObsidianStatus();$('credentials-form').hidden=false;try{const status=await desktop.credentialStatus();$('credentials-status').textContent=status.secure?`안전한 저장소 사용 가능 · 저장된 연결 ${status.configured.length}개`:'이 기기에서 안전한 저장소를 사용할 수 없어요. 실행 환경 변수를 사용해 주세요.';}catch{$('credentials-status').textContent='연결 저장소를 확인하지 못했어요.';}}};$('settings-close').onclick=()=>{$('credentials-form').reset();$('settings-dialog').close();};$('settings-dialog').addEventListener('close',()=>$('credentials-form').reset());
 $('read-all').onclick=()=>{state.alerts.forEach(a=>a.read=true);forcedEmotion=null;save();};
 $('enable-notifications').onclick=async()=>{if(desktop){await desktop.notify('⚡ 피카 데이 알림 테스트','회의 시작 10분 전 이렇게 알려드릴게요.');toast('알림이 보이지 않으면 기기의 알림 설정을 확인해 주세요.');}else if('Notification' in window){const permission=await Notification.requestPermission();toast(permission==='granted'?'회의 알림을 켰어요.':'기기의 알림 권한 설정을 확인해 주세요.');renderMeetings();}else toast('이 브라우저는 시스템 알림을 지원하지 않아요. 앱 안에서 알려드릴게요.');};
 $('add-meeting').onclick=()=>{$('meeting-dialog').showModal();$('meeting-title').focus();const d=new Date(Date.now()+3600000);$('meeting-start').value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};$('meeting-cancel').onclick=()=>{$('meeting-dialog').close();$('meeting-form').reset();};
@@ -146,11 +149,12 @@ $('demo').onclick=()=>{if(state.tasks.some(t=>t.demo)){state.tasks=state.tasks.f
  state.tasks.push(...sample.map(([title,source,priority],i)=>({id:'demo:'+i,title,source,priority,done:i>=4,demo:true})));
  state.meetings.push({id:'demo:meeting',title:'주간 팀 미팅',start:new Date(Date.now()+11*60000).toISOString(),url:null,source:'manual',demo:true});addAlert('예시 · 새 할 일 요약','Slack 2개, Gmail 1개가 새로 생겼어요. P1 2개, P2 1개를 확인해 보세요.','demo');$('demo').textContent='예시 지우기';saveMeetings();save();toast('예시 데이터로 기능을 체험할 수 있어요.');};
 $('date').textContent=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'long'}).format(new Date())+' · MY LITTLE DAILY COMPANION';
-if(desktop){desktop.onCompanionCommand?.(command=>{
+if(desktop){desktop.onCompanionCommand?.(command=>{lastInteraction=Date.now();
+ if(command.type==='activity'){renderTasks();return;}
  if(command.type==='toggle-task'){
   const task=state.tasks.find(t=>t.id===command.id);if(!task)return;
-  task.done=!!command.done;
-  if(task.done){const n=state.tasks.filter(t=>t.done).length,total=state.tasks.length;forcedEmotion={mood:'happy',title:n===total?`모두 해냈어요! (${n}/${total})`:n>=total/2?`벌써 절반 했어요! (${n}/${total})`:`한 걸음 더 해냈어요! (${n}/${total})`,body:'피카츄가 힘껏 응원하고 있어요 ⚡',until:Date.now()+30000};}else forcedEmotion=null;
+  task.done=!!command.done;task.completedAt=task.done?new Date().toISOString():null;
+  if(task.done){const n=state.tasks.filter(t=>t.done).length,total=state.tasks.length;forcedEmotion={mood:'happy',title:PikaDialogue.pick(n===total?'complete':n>=total/2?'halfway':'step')+` (${n}/${total})`,body:'피카츄가 힘껏 응원하고 있어요 ⚡',until:Date.now()+30000};}else forcedEmotion=null;
   save();
  }else if(command.type==='add-task'){
   const title=typeof command.title==='string'?command.title.trim().slice(0,140):'';if(!title)return;
@@ -159,17 +163,17 @@ if(desktop){desktop.onCompanionCommand?.(command=>{
  else if(command.type==='settings')$('settings').click();
  else if(command.type==='focus')$('focus-toggle').click();
  else if(command.type==='rest')$('rest-toggle').click();
-});desktop.onReminder(remind);desktop.onSync(data=>applySync(data,true));desktop.loadMeetings().then(meetings=>{if(meetings.length){state.meetings=meetings;save();}else saveMeetings();}).catch(()=>toast('저장된 회의를 불러오지 못했어요.'));}
+});desktop.onFocus?.(data=>{focusUntil=data.active?.endAt||0;updateFocusRecord(data);renderTasks();});desktop.productivityStatus?.().then(data=>{if(data?.focus){focusUntil=data.focus.active?.endAt||0;updateFocusRecord(data.focus);renderTasks();}});desktop.onReminder(remind);desktop.onSync(data=>applySync(data,true));desktop.loadMeetings().then(meetings=>{if(meetings.length){state.meetings=meetings;save();}else saveMeetings();}).catch(()=>toast('저장된 회의를 불러오지 못했어요.'));}
 render();if(state.tasks.some(t=>t.demo))$('demo').textContent='예시 지우기';if(!storageOkay)toast('기기 저장을 사용할 수 없어요.');sync(true);checkReminders();
 setInterval(()=>{checkReminders();renderMeetings();if(forcedEmotion&&Date.now()>=forcedEmotion.until)forcedEmotion=null;renderTasks();},15000);
 if(!desktop)setInterval(()=>{if(state.providers.some(p=>p.status==='connected'))sync(true);},300000);
 
-$('credentials-form').onsubmit=async e=>{e.preventDefault();if(!desktop)return;const result=await desktop.saveCredentials({SLACK_USER_TOKEN:$('slack-token').value,GMAIL_ACCESS_TOKEN:$('google-token').value,JIRA_ACCESS_TOKEN:$('jira-token').value,JIRA_CLOUD_ID:$('jira-cloud').value});$('credentials-form').reset();if(result.ok){$('credentials-status').textContent=`저장된 연결 ${result.configured.length}개`;toast('인증 정보를 안전하게 저장했어요. 실제 연결을 확인합니다.');sync();}else toast(result.error||'인증 정보를 저장하지 못했어요.');};$('credentials-clear').onclick=async()=>{if(!desktop)return;await desktop.clearCredentials();$('credentials-form').reset();$('credentials-status').textContent='앱에 저장한 인증 정보를 지웠어요. 실행 환경의 연결 설정은 유지됩니다.';toast('앱에 저장한 연결을 지웠어요.');sync();};
+$('credentials-form').onsubmit=async e=>{e.preventDefault();if(!desktop)return;const result=await desktop.saveCredentials({SLACK_USER_TOKEN:$('slack-token').value,GMAIL_ACCESS_TOKEN:$('google-token').value,GOOGLE_REFRESH_TOKEN:$('google-refresh').value,GOOGLE_CLIENT_ID:$('google-client').value,GOOGLE_CLIENT_SECRET:$('google-secret').value,JIRA_ACCESS_TOKEN:$('jira-token').value,JIRA_CLOUD_ID:$('jira-cloud').value});$('credentials-form').reset();if(result.ok){$('credentials-status').textContent=`저장된 연결 ${result.configured.length}개`;toast('인증 정보를 안전하게 저장했어요. 실제 연결을 확인합니다.');sync();}else toast(result.error||'인증 정보를 저장하지 못했어요.');};$('credentials-clear').onclick=async()=>{if(!desktop)return;await desktop.clearCredentials();$('credentials-form').reset();$('credentials-status').textContent='앱에 저장한 인증 정보를 지웠어요. 실행 환경의 연결 설정은 유지됩니다.';toast('앱에 저장한 연결을 지웠어요.');sync();};
 
 for(const choice of PikaFaces.choices){const button=el('button','face-choice',choice.label);button.dataset.face=choice.id;button.setAttribute('aria-pressed','false');button.onclick=()=>{facePreview=choice.id;renderTasks();};$('face-options').append(button);}
 $('face-auto').onclick=()=>{facePreview=null;renderTasks();};
-$('focus-toggle').onclick=()=>{facePreview=null;forcedEmotion=null;restUntil=0;focusUntil=Date.now()<focusUntil?0:Date.now()+25*60000;renderTasks();};
-$('rest-toggle').onclick=()=>{facePreview=null;forcedEmotion=null;focusUntil=0;restUntil=Date.now()<restUntil?0:Date.now()+5*60000;renderTasks();};
+$('focus-toggle').onclick=async()=>{facePreview=null;forcedEmotion=null;restUntil=0;const start=Date.now()>=focusUntil;if(desktop){try{const data=await desktop.setFocus(start);focusUntil=data.active?.endAt||0;updateFocusRecord(data);}catch{toast('집중 기록을 시작하지 못했어요.');return;}}else focusUntil=start?Date.now()+25*60000:0;renderTasks();};
+$('rest-toggle').onclick=async()=>{if(desktop)await desktop.setFocus(false);facePreview=null;forcedEmotion=null;focusUntil=0;restUntil=Date.now()<restUntil?0:Date.now()+5*60000;renderTasks();};
 document.addEventListener('pointerdown',()=>{lastInteraction=Date.now();},{passive:true});document.addEventListener('keydown',()=>{lastInteraction=Date.now();},{passive:true});
 
 
@@ -195,3 +199,12 @@ $('picture-file').onchange=async()=>{
  }catch(error){toast(error.message);}finally{$('picture-file').value='';}
 };
 $('personal-picture').onerror=()=>{if($('personal-picture').getAttribute('src')===captainImage){toast('기본 이미지를 불러오지 못했어요. 앱을 다시 실행해 주세요.');return;}pictureMode='expressions';facePreview=null;personalPicture=null;$('personal-picture').src=captainImage;toast('이미지를 표시하지 못해 기본 캡틴 이미지로 돌아왔어요.');};
+
+async function refreshObsidianStatus(){try{const status=await desktop.obsidianStatus();$('obsidian-status').textContent=status.configured?`${status.name} · ${status.path}`:'연결된 보관함이 없어요.';$('obsidian-clear').disabled=!status.configured;}catch{$('obsidian-status').textContent='보관함 연결을 확인하지 못했어요.';}}
+$('obsidian-choose').onclick=async()=>{if(!desktop)return;$('obsidian-choose').disabled=true;try{const result=await desktop.chooseObsidian();if(result.ok){await refreshObsidianStatus();toast('보관함을 연결했어요. 체크리스트를 읽어옵니다.');await sync();}else if(!result.canceled)toast(result.error||'보관함을 연결하지 못했어요.');}finally{$('obsidian-choose').disabled=false;}};
+$('obsidian-clear').onclick=async()=>{if(!desktop)return;await desktop.clearObsidian();state.tasks=state.tasks.filter(t=>t.source!=='obsidian');state.providers=state.providers.filter(p=>p.source!=='obsidian');state.seen=state.seen.filter(id=>!id.startsWith('obsidian:'));state.dismissed=state.dismissed.filter(id=>!id.startsWith('obsidian:'));save();await refreshObsidianStatus();toast('보관함 연결을 해제했어요.');};
+
+function updateFocusRecord(data){$('focus-record').textContent=`오늘 집중 ${data.minutes}분 · 완료한 세션 ${data.completed}회${data.active?' · 집중 중':''}`;}
+async function refreshProductivityStatus(){try{const data=await desktop.productivityStatus();$('quiet-enabled').checked=data.settings.quietEnabled;$('quiet-start').value=data.settings.quietStart;$('quiet-end').value=data.settings.quietEnd;updateFocusRecord(data.focus);}catch{toast('알림 설정을 확인하지 못했어요.');}}
+$('quiet-form').onsubmit=async e=>{e.preventDefault();const result=await desktop.saveProductivitySettings({quietEnabled:$('quiet-enabled').checked,quietStart:$('quiet-start').value,quietEnd:$('quiet-end').value});toast(result.ok?'알림 설정을 저장했어요.':result.error||'설정을 저장하지 못했어요.');};
+$('save-summary').onclick=async()=>{const result=await desktop.saveSummary();$('summary-status').textContent=result.ok?`저장 완료 · ${result.file}`:result.error;};
