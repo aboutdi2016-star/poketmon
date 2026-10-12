@@ -28,8 +28,8 @@ function addAlert(title,body,type='tasks',key=null) {
 }
 function validLink(url) { try { return new URL(url).protocol==='https:'; } catch { return false; } }
 function openLink(url) { if(!validLink(url))return; if(desktop)desktop.openLink(url); else window.open(url,'_blank','noopener,noreferrer'); }
-function notify(title,body,priority=2,count=1) {
-  if(desktop) desktop.notify(title,body,priority,count);
+function notify(title,body,priority=2,count=1,origins=[]) {
+  if(desktop) desktop.notify(title,body,priority,count,origins);
   else if('Notification' in window && Notification.permission==='granted')new Notification(title,{body});
 }
 const characterImages={focused:'/assets/characters/focused.png',goofy:'/assets/characters/goofy.png',happy:'/assets/characters/happy.png',sleepy:'/assets/characters/sleepy.png',tired:'/assets/characters/tired.png',surprised:'/assets/characters/surprised.png',angry:'/assets/characters/angry.png'};
@@ -125,7 +125,7 @@ function applySync(data, quiet=false) {
       state.tasks.push({...t,done:false});state.seen.push(t.id);newTasks.push(t);
     }
   }
-  if(newTasks.length){const groups=['slack','gmail','jira','obsidian'].map(s=>{const n=newTasks.filter(t=>t.source===s).length;return n?`${names[s]} ${n}개`:null;}).filter(Boolean).join(' · ');const body=`${groups}를 모았어요.`;addAlert(`새 할 일 ${newTasks.length}개를 발견했어요`,body);state.alerts[0].count=newTasks.length;notify('⚡ 새 할 일이 왔어요',`${body} ${newTasks.map(t=>t.title).join(' · ').slice(0,240)}`,2,newTasks.length);}
+  if(newTasks.length){const groups=['slack','gmail','jira','obsidian'].map(s=>{const n=newTasks.filter(t=>t.source===s).length;return n?`${names[s]} ${n}개`:null;}).filter(Boolean).join(' · ');const body=`${groups}를 모았어요.`;addAlert(`새 할 일 ${newTasks.length}개를 발견했어요`,body);state.alerts[0].count=newTasks.length;notify('⚡ 새 할 일이 왔어요',`${body} ${newTasks.map(t=>t.title).join(' · ').slice(0,240)}`,2,newTasks.length,newTasks.map(t=>({id:t.id,title:t.title,source:t.source,url:t.url})));}
   if(calendarChanged)saveMeetings();save();
   if(!quiet)toast(newTasks.length?`새 할 일 ${newTasks.length}개를 모았어요.`:data.results.some(p=>p.status==='connected')?'최근 업무를 확인했어요. 새로운 할 일은 없어요.':'아직 연결된 서비스가 없어요. 연결 안내를 확인해 주세요.');
 }

@@ -20,3 +20,4 @@ test('pet and popover remain inside displays including negative monitor coordina
  const right=popoverBounds({x:-198,y:500,width:180,height:190},area);assert.equal(right.x,-570);assert.ok(right.y+right.height<=720);
  const left=popoverBounds({x:-1280,y:0,width:180,height:190},area);assert.equal(left.x,-1088);assert.equal(left.y,0);
 });
+test('alert origins retain HTTPS and registered-note IDs while rejecting executable URLs and limiting lists',()=>{const {cleanOrigins}=require('../companion.cjs');const items=cleanOrigins([{id:'a',title:'Slack',url:'https://slack.com/test',source:'slack'},{id:'b',title:'unsafe',url:'javascript:alert(1)'},{id:'c',title:'note',source:'obsidian',url:'file:///private'}]);assert.equal(items.length,2);assert.equal(items[1].url,null);assert.equal(cleanOrigins(Array.from({length:60},(_,i)=>({id:String(i),title:'mail',url:'https://mail.google.com/'}))).length,50);});

@@ -5,7 +5,7 @@ const { startServer } = require('./server.cjs');
 const { createVault } = require('./credentials.cjs');
 const { dueReminders, validateMeetings } = require('./reminders.cjs');
 const { collect, safeUrl } = require('./integrations.cjs');
-const { cleanSnapshot, completionCheer, clampBounds, popoverBounds } = require('./companion.cjs');
+const { cleanOrigins, cleanSnapshot, completionCheer, clampBounds, popoverBounds } = require('./companion.cjs');
 const { createObsidian } = require('./obsidian.cjs');
 const dialogue = require('./dialogue.js');
 const {createGoogleAuth}=require('./google-auth.cjs');
@@ -37,7 +37,7 @@ else {
   const allowed=e=>isDashboard(e)||isCompanion(e);
   const send=(target,channel,data)=>{if(target&&!target.isDestroyed())target.webContents.send(channel,data);if(target===popover&&channel==='companion:popup'&&pet&&!pet.isDestroyed())pet.webContents.send(channel,data);};
   function areaFor(bounds){return screen.getDisplayNearestPoint({x:bounds.x+Math.round(bounds.width/2),y:bounds.y+Math.round(bounds.height/2)}).workArea;}
-  function anchorPopup(){if(!pet||!popover)return;const bounds=popoverBounds(pet.getBounds(),areaFor(pet.getBounds()),360,popup.mode==='bubble'?204:440),side=bounds.x<pet.getBounds().x?'right':'left',changed=popup.side!==side;popup.side=side;popover.setBounds(bounds);if(changed)send(popover,'companion:popup',popup);}
+  function anchorPopup(){if(!pet||!popover)return;const bounds=popoverBounds(pet.getBounds(),areaFor(pet.getBounds()),360,popup.mode==='bubble'?(popup.origins?.length?330:204):440),side=bounds.x<pet.getBounds().x?'right':'left',changed=popup.side!==side;popup.side=side;popover.setBounds(bounds);if(changed)send(popover,'companion:popup',popup);}
   function showDashboard(section){window.show();window.focus();hidePopup(false);if(section==='settings')send(window,'companion:command',{type:'settings'});}
   function showQuickNote(){showPanel();send(popover,'companion:popup',{...popup,quickNote:true});}
   function resizePet(){if(!pet)return;const scale=productivity.settings().petScale,b=pet.getBounds();pet.setResizable(true);try{pet.setBounds(clampBounds({...b,width:Math.round(180*scale),height:Math.round(190*scale)},areaFor(b)));}finally{pet.setResizable(false);}anchorPopup();persistPosition();}
@@ -47,20 +47,21 @@ else {
    if(productivity.quiet())return;
    if(!ready||!pet.isVisible()||popover.isVisible()||!bubbles.length)return;
    popup=bubbles.shift();if(popup.meetingId){const m=meetings.find(m=>m.id===popup.meetingId);if(!m||Date.now()>Date.parse(m.start)+600000){popup={mode:'panel'};nextBubble();return;}const minutes=Math.ceil((Date.parse(m.start)-Date.now())/60000);popup.body=`${m.title} · ${minutes>0?minutes+'분 후 시작해요.':'회의가 시작됐어요.'}`;}anchorPopup();send(popover,'companion:popup',popup);popover.showInactive();
-   bubbleTimer=setTimeout(()=>{hidePopup(false);nextBubble();},popup.meetingId?60000:12000);
+   bubbleTimer=setTimeout(()=>{hidePopup(false);nextBubble();},popup.meetingId?60000:popup.origins?.length?30000:12000);
   }
-  function bubble(title,body,{meetingId=null,canJoin=false}={}){
+  function bubble(title,body,{meetingId=null,canJoin=false,origins=[]}={}){
    if(productivity.quiet()||(!meetingId&&productivity.settings().notificationMode==='meetings'))return;
-   const item={mode:'bubble',title:String(title).slice(0,150),body:String(body).slice(0,350),meetingId,canJoin};
+   const item={mode:'bubble',title:String(title).slice(0,150),body:String(body).slice(0,350),meetingId,canJoin,origins:cleanOrigins(origins)};
    if(meetingId&&popover?.isVisible()&&popup.mode==='bubble'&&!popup.meetingId){clearTimeout(bubbleTimer);popover.hide();popup={mode:'panel'};}
    if(meetingId){bubbles=bubbles.filter(b=>b.meetingId!==meetingId);bubbles.unshift(item);}else bubbles.push(item);
    if(bubbles.length>10)bubbles.splice(10);
    nextBubble();
   }
-  function nativeNote(title,body,meetingId=null){
+  function openOrigin(item){const url=item?.source==='obsidian'?obsidian.noteUrl(item.id):safeUrl(item?.url);if(!url)return false;shell.openExternal(url);return true;}
+  function nativeNote(title,body,meetingId=null,origins=[]){
    if(productivity.quiet()||!Notification.isSupported())return;
    const note=new Notification({title,body,icon:path.join(__dirname,'assets','characters','angry.png')});
-   note.on('click',()=>{const m=meetings.find(m=>m.id===meetingId);const url=safeUrl(m?.url);if(url)shell.openExternal(url);else showPanel();});note.show();
+   note.on('click',()=>{const m=meetings.find(m=>m.id===meetingId);const url=safeUrl(m?.url);if(url)shell.openExternal(url);else if(origins.length===1){if(!openOrigin(origins[0]))showPanel();}else if(origins.length){if(popover.isVisible())hidePopup(false);bubble(title,body,{origins});}else showPanel();});note.show();
   }
   function menuTemplate(){return [
    {label:'오늘의 할 일',click:()=>{pet.showInactive();showPanel();}},
@@ -112,7 +113,7 @@ else {
    return meetings;
   });
   ipcMain.handle('link:open',(e,url)=>{if(!allowed(e))return;const clean=safeUrl(url);if(clean)return shell.openExternal(clean);});
-  ipcMain.handle('notify',(e,payload)=>{if(!isDashboard(e)||typeof payload?.body!=='string')return;const title=String(payload.title||'피카 데이').slice(0,100),body=payload.body.slice(0,300);const route=productivity.route(payload.priority);if(route==='digest'){productivity.queueDigest({body,count:payload.count});return;}if(route==='immediate'){bubble(title,body);nativeNote(title,body);}});
+  ipcMain.handle('notify',(e,payload)=>{if(!isDashboard(e)||typeof payload?.body!=='string')return;const title=String(payload.title||'피카 데이').slice(0,100),body=payload.body.slice(0,300);const route=productivity.route(payload.priority);if(route==='digest'){productivity.queueDigest({body,count:payload.count});return;}if(route==='immediate'){const origins=cleanOrigins(payload.origins);bubble(title,body,{origins});nativeNote(title,body,null,origins);}});
   ipcMain.handle('companion:state',e=>isCompanion(e)?snapshot:null);
   ipcMain.handle('companion:popup',e=>isCompanion(e)?popup:null);
   ipcMain.on('companion:publish',(e,input)=>{
@@ -128,6 +129,7 @@ else {
    if(input.type==='toggle-task'&&typeof input.id!=='string')return;
    send(window,'companion:command',{type:input.type,id:typeof input.id==='string'?input.id.slice(0,200):null,done:!!input.done,title:typeof input.title==='string'?input.title.slice(0,140):'',priority:input.priority===1?1:2});
   });
+  ipcMain.handle('companion:origin',(e,index)=>{if(e.sender!==popover?.webContents||popup.mode!=='bubble'||!Number.isInteger(index))return {ok:false};const item=popup.origins?.[index];if(!item)return {ok:false};const ok=openOrigin(item);return {ok,error:ok?null:'원문을 열 수 없어요. 보관함 연결 후 다시 수집해 주세요.'};});
   ipcMain.on('companion:join',(e,id)=>{if(!isCompanion(e))return;const m=meetings.find(m=>m.id===id);const url=safeUrl(m?.url);if(url){shell.openExternal(url);hidePopup();}});
   ipcMain.on('companion:menu',e=>{if(e.sender===pet?.webContents)Menu.buildFromTemplate(menuTemplate()).popup({window:pet});});
   ipcMain.on('companion:pointer',(e,data)=>{

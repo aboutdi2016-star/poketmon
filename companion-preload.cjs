@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('pikaCompanion', {
   close: () => ipcRenderer.send('companion:close'),
   dashboard: section => ipcRenderer.send('companion:dashboard', section),
   command: input => ipcRenderer.send('companion:command', input),
+  openOrigin: index => ipcRenderer.invoke('companion:origin',index),
   join: id => ipcRenderer.send('companion:join', id),
   openObsidian: id => ipcRenderer.invoke('obsidian:open',id),
   pointer: data => ipcRenderer.send('companion:pointer', data),

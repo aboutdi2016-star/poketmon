@@ -22,3 +22,6 @@ function popoverBounds(pet, area, width=360, height=440) {
   return clampBounds({x:left>=area.x?left:pet.x+pet.width+12,y:pet.y+pet.height-height,width,height},area);
 }
 module.exports={cleanSnapshot,completionCheer,clampBounds,popoverBounds};
+
+function cleanOrigins(input){const {safeUrl}=require('./integrations.cjs');return (Array.isArray(input)?input:[]).slice(0,50).filter(t=>typeof t?.id==='string'&&typeof t.title==='string').map(t=>({id:t.id.slice(0,200),title:t.title.slice(0,140),source:cleanText(t.source,30),url:safeUrl(t.url)})).filter(t=>t.url||t.source==='obsidian');}
+module.exports.cleanOrigins=cleanOrigins;

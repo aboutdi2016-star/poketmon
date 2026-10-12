@@ -19,7 +19,7 @@ function render(state){
  }
  if(!$('meetings').children.length)$('meetings').append(element('div','empty','다가오는 회의가 없어요.'));
 }
-function popup(data){document.body.classList.toggle('arrow-left',data?.side==='left');const panel=data?.mode==='panel';if(panel){$('quick-note-form').hidden=!data.quickNote;if(data.quickNote)setTimeout(()=>$('quick-note-text').focus(),50);}$('panel').hidden=!panel;$('bubble').hidden=panel;meetingId=data?.meetingId||null;if(!panel){$('bubble-title').textContent=data?.title||'피카!';$('bubble-body').textContent=data?.body||'';$('bubble-join').hidden=!data?.canJoin;}}
+function popup(data){document.body.classList.toggle('arrow-left',data?.side==='left');const panel=data?.mode==='panel';if(panel){$('quick-note-form').hidden=!data.quickNote;if(data.quickNote)setTimeout(()=>$('quick-note-text').focus(),50);}$('panel').hidden=!panel;$('bubble').hidden=panel;meetingId=data?.meetingId||null;if(!panel){$('bubble-title').textContent=data?.title||'피카!';$('bubble-body').textContent=data?.body||'';$('bubble-origins').replaceChildren();$('bubble-origins').hidden=!data?.origins?.length;for(const [index,item] of (data.origins||[]).entries()){const button=element('button','quiet',(data.origins.length===1?'원문 열기 ↗ · ': '↗ ')+item.title);button.onclick=async()=>{const result=await bridge.openOrigin(index);if(!result.ok)$('bubble-body').textContent=result.error||'원문을 열지 못했어요.';};$('bubble-origins').append(button);}$('bubble-join').hidden=!data?.canJoin;}}
 for(const id of ['close-panel','close-bubble'])$(id).onclick=()=>bridge.close();
 $('bubble-panel').onclick=()=>bridge.panel();$('bubble-join').onclick=()=>bridge.join(meetingId);
 $('details').onclick=()=>bridge.dashboard();$('settings').onclick=()=>bridge.dashboard('settings');
