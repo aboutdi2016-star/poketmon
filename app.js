@@ -58,9 +58,9 @@ function renderTasks() {
   const done=state.tasks.filter(t=>t.done).length,total=state.tasks.length,left=total-done,urgent=state.tasks.filter(t=>!t.done&&t.priority===1).length,pct=total?Math.round(done/total*100):0;
   $('all-count').textContent=total;$('urgent-count').textContent=urgent;$('done-count').textContent=done;$('total').textContent=total?`· ${total}`:'';
   $('percent').textContent=pct+'%';$('fill').style.width=pct+'%';$('progress-text').textContent=`${total}개의 할 일 중 ${done}개를 마쳤어요.`;$('remaining').textContent=`${left}개의 작은 한 걸음이 남았어요`;
-  let mood=urgent?'determined':'confident', greeting='피카피카! 오늘도 응원할게요.',message=left?`할 일이 ${left}개 남았어요. ${urgent?`P1 ${urgent}개부터 `:''}하나씩 함께 해봐요.`:'작은 할 일 하나부터 적어봐요.';
+  let mood='confident', greeting='피카피카! 오늘도 응원할게요.',message=left?`할 일이 ${left}개 남았어요. 하나씩 함께 해봐요.`:'작은 할 일 하나부터 적어봐요.';
   if(total && done>=total/2) {mood='happy';greeting=done===total?'모두 해냈어요! 정말 멋져요 ⚡':`벌써 절반 했어요! (${done}/${total})`;message=done===total?'수고했어요. 이제 푹 쉬어도 괜찮아요.':`멋져요! ${left}개도 함께 해봐요.`;}
-  if(state.alerts.some(a=>!a.read&&a.type==='tasks')){mood=state.alerts.find(a=>!a.read&&a.type==='tasks').count>=3?'surprised':'excited';greeting='피카! 새로운 소식이 왔어요.';message=state.alerts.find(a=>!a.read&&a.type==='tasks').body;}
+  if(state.alerts.some(a=>!a.read&&a.type==='tasks')){mood='angry';greeting='피카! 새로운 소식이 왔어요.';message=state.alerts.find(a=>!a.read&&a.type==='tasks').body;}
   if(left>=10&&!state.alerts.some(a=>!a.read&&a.type==='tasks')){mood='tired';greeting='할 일이 많아도 괜찮아요.';message=`${left}개를 한 번에 할 필요 없어요. 하나씩 함께 해봐요.`;}
   if(state.providers.some(p=>p.status==='error')){mood='angry';greeting='앗, 연결이 잠깐 꼬였어요.';message='피카츄도 같이 해결할게요. 연결 안내에서 인증과 권한을 확인해 주세요.';}
   if(Date.now()-lastInteraction>=20*60000){mood='sleepy';greeting='피카… 잠깐 쉬어갈까요?';message='한동안 조용했네요. 눈도 어깨도 가볍게 풀어주세요.';}
@@ -70,7 +70,7 @@ function renderTasks() {
   if(facePreview){mood=facePreview;greeting=PikaFaces.get(mood).label+' 표정 미리보기';message=PikaFaces.get(mood).caption;}
   if(!forcedEmotion&&!facePreview){const key=[mood,done,total,state.alerts.find(a=>!a.read&&a.type==='tasks')?.id||''].join(':');if(speechCache?.key!==key){speechCache={key,line:PikaDialogue.pick(mood==='happy'?(done===total?'complete':'halfway'):mood)};}greeting=speechCache.line+(mood==='happy'?` (${done}/${total})`:'');}
   expression(mood);$('greeting').textContent=greeting;$('message').textContent=message;
-  const visible=state.tasks.filter(t=>filter==='core'?t.coreDay===PikaDayTools.localDay():filter==='all'||(filter==='today'?PikaDayTools.todayTask(t):filter==='urgent'?!t.done&&t.priority===1:t.done)).slice().sort((a,b)=>Number(a.done)-Number(b.done)||a.priority-b.priority);
+  const visible=state.tasks.filter(t=>filter==='core'?t.coreDay===PikaDayTools.localDay():filter==='all'||(filter==='today'?PikaDayTools.todayTask(t):filter==='urgent'?!t.done&&t.priority===1:t.done)).slice().sort((a,b)=>Number(a.done)-Number(b.done));
   $('tasks').replaceChildren();
   for(const t of visible){
     const row=el('div','task'+(t.done?' done':'')),cb=el('input','check');cb.type='checkbox';cb.checked=!!t.done;cb.setAttribute('aria-label',t.title+' 완료');
@@ -80,7 +80,7 @@ function renderTasks() {
     if(t.source==='obsidian'&&desktop){const link=el('button','source-link','노트 열기 ↗');link.onclick=()=>desktop.openObsidian(t.id);meta.append(link);}
     if(validLink(t.url)){const link=el('a','source-link','원문 ↗');link.href=t.url;link.target='_blank';link.rel='noopener noreferrer';link.onclick=e=>{e.preventDefault();openLink(t.url);};meta.append(link);}
     content.append(title,meta);const p=el('span','priority p'+t.priority,'P'+t.priority),del=el('button','delete','×');del.setAttribute('aria-label',t.title+' 삭제');
-    del.onclick=()=>{state.tasks=state.tasks.filter(x=>x.id!==t.id);if(t.source!=='manual')state.dismissed.push(t.id);save();};const star=el('button','source-link',t.coreDay===PikaDayTools.localDay()?'★ 핵심':'☆ 핵심');star.setAttribute('aria-label',t.title+' 핵심 선택');star.onclick=()=>toggleCore(t.id);row.append(cb,content,star,p,del);$('tasks').append(row);
+    del.onclick=()=>{state.tasks=state.tasks.filter(x=>x.id!==t.id);if(t.source!=='manual')state.dismissed.push(t.id);save();};const star=el('button','source-link',t.coreDay===PikaDayTools.localDay()?'★ 핵심':'☆ 핵심');star.setAttribute('aria-label',t.title+' 핵심 선택');star.onclick=()=>toggleCore(t.id);row.append(cb,content,star,del);$('tasks').append(row);
   }
   if(!visible.length)$('tasks').append(el('div','empty',filter==='done'?'완료한 일들이 여기에 모여요 🌱':filter==='urgent'?'급한 할 일이 없어요. 차근차근 해봐요 🌱':'할 일을 추가하거나 업무 서비스를 연결해 주세요 ⚡'));
   if(desktop?.publishCompanion){const snapshot={tasks:state.tasks,meetings:state.meetings,image:$('personal-picture').getAttribute('src'),mood,greeting,message,checkedAt:state.checkedAt},serialized=JSON.stringify(snapshot);if(serialized!==lastCompanionSnapshot){lastCompanionSnapshot=serialized;desktop.publishCompanion(snapshot);}}
@@ -127,7 +127,7 @@ function applySync(data, quiet=false) {
       state.tasks.push({...t,done:false});state.seen.push(t.id);newTasks.push(t);
     }
   }
-  if(newTasks.length){const p1=newTasks.filter(t=>t.priority===1).length;const groups=['slack','gmail','jira','obsidian'].map(s=>{const n=newTasks.filter(t=>t.source===s).length;return n?`${names[s]} ${n}개`:null;}).filter(Boolean).join(' · ');const body=`${groups}. P1 ${p1}개, P2 ${newTasks.length-p1}개를 모았어요.`;addAlert(`새 할 일 ${newTasks.length}개를 발견했어요`,body);state.alerts[0].count=newTasks.length;const first=newTasks.filter(t=>t.priority===1),second=newTasks.filter(t=>t.priority!==1);if(first.length)notify(PikaDialogue.pick('determined'),`새 P1 ${first.length}개: ${first.map(t=>t.title).join(' · ').slice(0,240)}`,1,first.length);if(second.length)notify(PikaDialogue.pick('excited'),`새 P2 ${second.length}개: ${second.map(t=>t.title).join(' · ').slice(0,240)}`,2,second.length);}
+  if(newTasks.length){const groups=['slack','gmail','jira','obsidian'].map(s=>{const n=newTasks.filter(t=>t.source===s).length;return n?`${names[s]} ${n}개`:null;}).filter(Boolean).join(' · ');const body=`${groups}를 모았어요.`;addAlert(`새 할 일 ${newTasks.length}개를 발견했어요`,body);state.alerts[0].count=newTasks.length;notify('⚡ 새 할 일이 왔어요',`${body} ${newTasks.map(t=>t.title).join(' · ').slice(0,240)}`,2,newTasks.length);}
   if(calendarChanged)saveMeetings();save();
   if(!quiet)toast(newTasks.length?`새 할 일 ${newTasks.length}개를 모았어요.`:data.results.some(p=>p.status==='connected')?'최근 업무를 확인했어요. 새로운 할 일은 없어요.':'아직 연결된 서비스가 없어요. 연결 안내를 확인해 주세요.');
 }
@@ -136,7 +136,7 @@ function remind(m){facePreview=null;const key=`${m.id}:${m.start}`;const minutes
 function checkReminders(){if(desktop)return;for(const m of state.meetings){const start=Date.parse(m.start),key=`${m.id}:${m.start}`;if(Date.now()>=start-600000&&Date.now()<start&&!state.reminded.includes(key)){state.reminded.push(key);remind(m);notify('⚡ 곧 회의가 시작돼요',m.title);}}}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));renderTasks();});
 $('open').onclick=()=>{$('dialog').showModal();$('title').focus();};$('cancel').onclick=()=>{$('dialog').close();$('form').reset();};$('title').oninput=()=>$('title').setCustomValidity('');
-$('form').onsubmit=e=>{e.preventDefault();const title=$('title').value.trim();if(!title){$('title').setCustomValidity('할 일을 입력해 주세요.');$('title').reportValidity();return;}state.tasks.push({id:crypto.randomUUID(),title,priority:Number($('priority').value),done:false,source:'manual'});save();$('dialog').close();$('form').reset();toast('새로운 한 걸음을 추가했어요.');};
+$('form').onsubmit=e=>{e.preventDefault();const title=$('title').value.trim();if(!title){$('title').setCustomValidity('할 일을 입력해 주세요.');$('title').reportValidity();return;}state.tasks.push({id:crypto.randomUUID(),title,priority:2,done:false,source:'manual'});save();$('dialog').close();$('form').reset();toast('새로운 한 걸음을 추가했어요.');};
 $('clear').onclick=()=>{const done=state.tasks.filter(t=>t.done);if(!done.length){toast('아직 완료한 일이 없어요.');return;}state.dismissed.push(...done.filter(t=>t.source!=='manual').map(t=>t.id));state.tasks=state.tasks.filter(t=>!t.done);forcedEmotion=null;save();toast('완료한 일을 정리했어요.');};
 $('sync').onclick=()=>sync();$('settings').onclick=async()=>{$('settings-dialog').showModal();if(desktop){$('obsidian-settings').hidden=false;$('productivity-settings').hidden=false;refreshProductivityStatus();refreshObsidianStatus();$('credentials-form').hidden=false;try{const status=await desktop.credentialStatus();$('credentials-status').textContent=status.secure?`안전한 저장소 사용 가능 · 저장된 연결 ${status.configured.length}개`:'이 기기에서 안전한 저장소를 사용할 수 없어요. 실행 환경 변수를 사용해 주세요.';}catch{$('credentials-status').textContent='연결 저장소를 확인하지 못했어요.';}}};$('settings-close').onclick=()=>{$('credentials-form').reset();$('settings-dialog').close();};$('settings-dialog').addEventListener('close',()=>$('credentials-form').reset());
 $('read-all').onclick=()=>{state.alerts.forEach(a=>a.read=true);forcedEmotion=null;save();};
@@ -147,7 +147,7 @@ $('meeting-form').onsubmit=e=>{e.preventDefault();const title=$('meeting-title')
 $('demo').onclick=()=>{if(state.tasks.some(t=>t.demo)){state.tasks=state.tasks.filter(t=>!t.demo);state.meetings=state.meetings.filter(m=>!m.demo);state.alerts=state.alerts.filter(a=>a.type!=='demo');forcedEmotion=null;$('demo').textContent='예시 체험';saveMeetings();save();return;}
  const sample=[['하늘님 질문 답장 — 결제 화면 오류','slack',1],['분기 셀프 리뷰 제출 (오늘 마감)','gmail',1],['HARU-142 오프라인 동기화 충돌 수정','jira',1],['PR #128 리뷰 코멘트 반영','slack',2],['주간회의 액션 아이템 정리','slack',2],['디자인 QA 피드백 정리','gmail',2],['기획 문서 검토하기','jira',2],['팀에 진행 상황 공유하기','slack',2]];
  state.tasks.push(...sample.map(([title,source,priority],i)=>({id:'demo:'+i,title,source,priority,done:i>=4,demo:true})));
- state.meetings.push({id:'demo:meeting',title:'주간 팀 미팅',start:new Date(Date.now()+11*60000).toISOString(),url:null,source:'manual',demo:true});addAlert('예시 · 새 할 일 요약','Slack 2개, Gmail 1개가 새로 생겼어요. P1 2개, P2 1개를 확인해 보세요.','demo');$('demo').textContent='예시 지우기';saveMeetings();save();toast('예시 데이터로 기능을 체험할 수 있어요.');};
+ state.meetings.push({id:'demo:meeting',title:'주간 팀 미팅',start:new Date(Date.now()+11*60000).toISOString(),url:null,source:'manual',demo:true});addAlert('예시 · 새 할 일 요약','Slack 2개, Gmail 1개가 새로 생겼어요. 새로운 할 일을 확인해 보세요.','demo');$('demo').textContent='예시 지우기';saveMeetings();save();toast('예시 데이터로 기능을 체험할 수 있어요.');};
 $('date').textContent=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'long'}).format(new Date())+' · MY LITTLE DAILY COMPANION';
 if(desktop){desktop.onCompanionCommand?.(command=>{lastInteraction=Date.now();
  if(command.type==='activity'){renderTasks();return;}
@@ -167,7 +167,7 @@ if(desktop){desktop.onCompanionCommand?.(command=>{lastInteraction=Date.now();
 });desktop.onFocus?.(data=>{focusUntil=data.active?.endAt||0;updateFocusRecord(data);renderTasks();});desktop.productivityStatus?.().then(data=>{if(data?.focus){focusUntil=data.focus.active?.endAt||0;updateFocusRecord(data.focus);renderTasks();}});desktop.onReminder(remind);desktop.onSync(data=>applySync(data,true));desktop.loadMeetings().then(meetings=>{if(meetings.length){state.meetings=meetings;save();}else saveMeetings();}).catch(()=>toast('저장된 회의를 불러오지 못했어요.'));}
 render();if(state.tasks.some(t=>t.demo))$('demo').textContent='예시 지우기';if(!storageOkay)toast('기기 저장을 사용할 수 없어요.');sync(true);checkReminders();
 setInterval(()=>{checkReminders();renderMeetings();if(forcedEmotion&&Date.now()>=forcedEmotion.until)forcedEmotion=null;renderTasks();},15000);
-if(!desktop)setInterval(()=>{if(state.providers.some(p=>p.status==='connected'))sync(true);},300000);
+if(!desktop)setInterval(()=>{if(state.providers.some(p=>p.status==='connected'))sync(true);},30000);
 
 $('credentials-form').onsubmit=async e=>{e.preventDefault();if(!desktop)return;const result=await desktop.saveCredentials({SLACK_USER_TOKEN:$('slack-token').value,GMAIL_ACCESS_TOKEN:$('google-token').value,GOOGLE_REFRESH_TOKEN:$('google-refresh').value,GOOGLE_CLIENT_ID:$('google-client').value,GOOGLE_CLIENT_SECRET:$('google-secret').value,JIRA_ACCESS_TOKEN:$('jira-token').value,JIRA_CLOUD_ID:$('jira-cloud').value});$('credentials-form').reset();if(result.ok){$('credentials-status').textContent=`저장된 연결 ${result.configured.length}개`;toast('인증 정보를 안전하게 저장했어요. 실제 연결을 확인합니다.');sync();}else toast(result.error||'인증 정보를 저장하지 못했어요.');};$('credentials-clear').onclick=async()=>{if(!desktop)return;await desktop.clearCredentials();$('credentials-form').reset();$('credentials-status').textContent='앱에 저장한 인증 정보를 지웠어요. 실행 환경의 연결 설정은 유지됩니다.';toast('앱에 저장한 연결을 지웠어요.');sync();};
 

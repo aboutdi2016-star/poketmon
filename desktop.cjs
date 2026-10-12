@@ -24,7 +24,8 @@ else {
   const google=createGoogleAuth({values:getCredentials,save:input=>vault.save(input)});
   productivity=createProductivity(path.join(app.getPath('userData'),'productivity.json'));
   const obsidian=createObsidian(path.join(app.getPath('userData'),'obsidian.json'));
-  async function collectAll(){const selected=obsidian.status().path;let env=getCredentials(),authError=null;try{env=await google.credentials();}catch(error){authError=error.message;env={...env,GMAIL_ACCESS_TOKEN:''};}const [remote,local]=await Promise.all([collect(env),obsidian.collect()]);if(authError)for(const result of remote.results.filter(p=>['gmail','calendar'].includes(p.source)))Object.assign(result,{status:'error',message:authError});return {...remote,results:[...remote.results,selected===obsidian.status().path?local:await obsidian.collect()]};}
+  let collecting;function collectAll(){if(!collecting)collecting=collectOnce().finally(()=>{collecting=null;});return collecting;}
+  async function collectOnce(){const selected=obsidian.status().path;let env=getCredentials(),authError=null;try{env=await google.credentials();}catch(error){authError=error.message;env={...env,GMAIL_ACCESS_TOKEN:''};}const [remote,local]=await Promise.all([collect(env),obsidian.collect()]);if(authError)for(const result of remote.results.filter(p=>['gmail','calendar'].includes(p.source)))Object.assign(result,{status:'error',message:authError});return {...remote,results:[...remote.results,selected===obsidian.status().path?local:await obsidian.collect()]};}
 
   const scheduleFile=path.join(app.getPath('userData'),'meetings.json');
   const positionFile=path.join(app.getPath('userData'),'companion-position.json');
@@ -34,19 +35,19 @@ else {
   const isDashboard=e=>e.sender===window?.webContents;
   const isCompanion=e=>e.sender===pet?.webContents||e.sender===popover?.webContents;
   const allowed=e=>isDashboard(e)||isCompanion(e);
-  const send=(target,channel,data)=>{if(target&&!target.isDestroyed())target.webContents.send(channel,data);};
+  const send=(target,channel,data)=>{if(target&&!target.isDestroyed())target.webContents.send(channel,data);if(target===popover&&channel==='companion:popup'&&pet&&!pet.isDestroyed())pet.webContents.send(channel,data);};
   function areaFor(bounds){return screen.getDisplayNearestPoint({x:bounds.x+Math.round(bounds.width/2),y:bounds.y+Math.round(bounds.height/2)}).workArea;}
   function anchorPopup(){if(!pet||!popover)return;const bounds=popoverBounds(pet.getBounds(),areaFor(pet.getBounds()),360,popup.mode==='bubble'?204:440),side=bounds.x<pet.getBounds().x?'right':'left',changed=popup.side!==side;popup.side=side;popover.setBounds(bounds);if(changed)send(popover,'companion:popup',popup);}
   function showDashboard(section){window.show();window.focus();hidePopup(false);if(section==='settings')send(window,'companion:command',{type:'settings'});}
   function showQuickNote(){showPanel();send(popover,'companion:popup',{...popup,quickNote:true});}
   function resizePet(){if(!pet)return;const scale=productivity.settings().petScale,b=pet.getBounds();pet.setBounds(clampBounds({...b,width:Math.round(180*scale),height:Math.round(190*scale)},areaFor(b)));anchorPopup();persistPosition();}
   function showPanel(){if(!ready)return;send(window,'companion:command',{type:'activity'});clearTimeout(bubbleTimer);if(popup.mode==='bubble')bubbles.unshift(popup);popup={mode:'panel'};anchorPopup();send(popover,'companion:popup',popup);popover.show();popover.focus();}
-  function hidePopup(advance=true){clearTimeout(bubbleTimer);popover?.hide();popup={mode:'panel'};if(advance)setTimeout(nextBubble,100);}
+  function hidePopup(advance=true){clearTimeout(bubbleTimer);popover?.hide();popup={mode:'panel'};send(pet,'companion:popup',popup);if(advance)setTimeout(nextBubble,100);}
   function nextBubble(){
    if(productivity.quiet())return;
    if(!ready||!pet.isVisible()||popover.isVisible()||!bubbles.length)return;
    popup=bubbles.shift();if(popup.meetingId){const m=meetings.find(m=>m.id===popup.meetingId);if(!m||Date.now()>Date.parse(m.start)+600000){popup={mode:'panel'};nextBubble();return;}const minutes=Math.ceil((Date.parse(m.start)-Date.now())/60000);popup.body=`${m.title} · ${minutes>0?minutes+'분 후 시작해요.':'회의가 시작됐어요.'}`;}anchorPopup();send(popover,'companion:popup',popup);popover.showInactive();
-   bubbleTimer=setTimeout(()=>{popover.hide();popup={mode:'panel'};nextBubble();},popup.meetingId?60000:12000);
+   bubbleTimer=setTimeout(()=>{hidePopup(false);nextBubble();},popup.meetingId?60000:12000);
   }
   function bubble(title,body,{meetingId=null,canJoin=false}={}){
    if(productivity.quiet()||(!meetingId&&productivity.settings().notificationMode==='meetings'))return;
@@ -58,7 +59,7 @@ else {
   }
   function nativeNote(title,body,meetingId=null){
    if(productivity.quiet()||!Notification.isSupported())return;
-   const note=new Notification({title,body});
+   const note=new Notification({title,body,icon:path.join(__dirname,'assets','characters','angry.png')});
    note.on('click',()=>{const m=meetings.find(m=>m.id===meetingId);const url=safeUrl(m?.url);if(url)shell.openExternal(url);else showPanel();});note.show();
   }
   function menuTemplate(){return [
@@ -164,13 +165,13 @@ else {
   pet.on('show',refreshTray);pet.on('hide',refreshTray);
   ready=true;pet.setAlwaysOnTop(true,'floating');popover.setAlwaysOnTop(true,'floating');pet.showInactive();refreshTray();
   send(pet,'companion:state',snapshot);send(popover,'companion:state',snapshot);
-  const left=snapshot?.tasks.filter(t=>!t.done)||[],p1=left.filter(t=>t.priority===1).length;
-  bubble(dialogue.pick('welcome'),left.length?`남은 할 일 ${left.length}개 · P1 ${p1}개. 하나씩 함께 해봐요.`:'저를 클릭하면 할 일을 볼 수 있어요. 드래그해서 편한 곳으로 옮겨 주세요.');
-  syncTimer=setInterval(async()=>{try{send(window,'sync:update',await collectAll(getCredentials()));}catch{bubble(dialogue.pick('angry'),'설정에서 연결 상태를 확인할 수 있어요.');}},300000);
+  const left=snapshot?.tasks.filter(t=>!t.done)||[];
+  bubble(dialogue.pick('welcome'),left.length?`남은 할 일 ${left.length}개. 하나씩 함께 해봐요.`:'저를 클릭하면 할 일을 볼 수 있어요. 드래그해서 편한 곳으로 옮겨 주세요.');
+  syncTimer=setInterval(async()=>{try{send(window,'sync:update',await collectAll(getCredentials()));}catch{bubble(dialogue.pick('angry'),'설정에서 연결 상태를 확인할 수 있어요.');}},30000);
   function checkMeetings(){for(const m of dueReminders(meetings,reminded)){reminded.add(`${m.id}:${m.start}`);persistMeetings();send(window,'reminder',m);const body=`${m.title} · ${Math.max(1,Math.ceil((Date.parse(m.start)-Date.now())/60000))}분 후 시작해요.`;bubble(dialogue.pick('meeting'),body,{meetingId:m.id,canJoin:!!safeUrl(m.url)});nativeNote('⚡ 곧 회의가 시작돼요',body,m.id);}}
   function tick(){checkMeetings();const finished=productivity.tick();broadcastFocus();const digest=productivity.flushDigest();if(digest){bubble(`P2 새 할 일 ${digest.count}개 · 한 시간 요약`,digest.body);nativeNote('⚡ P2 한 시간 요약',digest.body);}if(finished&&productivity.route()==='immediate')bubble(dialogue.pick('happy'),'25분 집중을 마쳤어요! 오늘의 집중 기록에 저장했어요.');for(const item of productivity.due()){if(item.meetingId){const m=meetings.find(m=>m.id===item.meetingId);if(!m||Date.parse(m.start)+600000<=Date.now())continue;}bubble(item.title,item.body,item);}nextBubble();}
   powerMonitor.on('suspend',()=>{productivity.stop();broadcastFocus();});
-  tick();timer=setInterval(tick,15000);
+  tick();timer=setInterval(tick,1000);
  }).catch(error=>{console.error('데스크톱 시작 실패:',error.message);app.quit();});
  app.on('before-quit',()=>{quitting=true;productivity?.stop();clearInterval(timer);clearInterval(syncTimer);clearTimeout(bubbleTimer);server?.close();});
  app.on('window-all-closed',()=>{});

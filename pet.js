@@ -23,6 +23,9 @@ function finish(e,canceled=false){if(!drag)return;const moved=drag.moved;drag=nu
 button.addEventListener('pointerup',e=>finish(e));button.addEventListener('pointercancel',e=>finish(e,true));
 button.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();bridge?.panel();}});
 document.addEventListener('contextmenu',e=>{e.preventDefault();if(opaque(e.clientX,e.clientY))bridge?.menu();});
-function render(state){if(state?.image&&image.getAttribute('src')!==state.image){pixels=null;image.src=state.image;}button.setAttribute('aria-label',`피카츄 · ${state?.greeting||'오늘의 할 일 보기'}`);}
+let latestState=null,alertVisible=false;
+function render(state){latestState=state;state=alertVisible?{...state,image:'/assets/characters/angry.png'}:state;if(state?.image&&image.getAttribute('src')!==state.image){pixels=null;image.src=state.image;}button.setAttribute('aria-label',`피카츄 · ${state?.greeting||'오늘의 할 일 보기'}`);}
 bridge?.onState(render);bridge?.state().then(render);
 image.onerror=()=>{if(image.getAttribute('src')!=='/assets/characters/captain.png')image.src='/assets/characters/captain.png';};
+
+bridge?.onPopup(data=>{alertVisible=data?.mode==='bubble';render(latestState);});bridge?.popup().then(data=>{alertVisible=data?.mode==='bubble';render(latestState);});
