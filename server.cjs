@@ -11,7 +11,7 @@ function startServer({port = 3000, host = '127.0.0.1', getCredentials = () => pr
     files[`/${name}.html`]=[`${name}.html`,'text/html; charset=utf-8'];
     files[`/${name}.js`]=[`${name}.js`,'text/javascript; charset=utf-8'];
   }
-  for (const name of ['captain','sleepy','tired','surprised','angry']) files[`/assets/characters/${name}.png`]=[`assets/characters/${name}.png`,'image/png'];
+  for (const name of ['captain','sleepy','tired','surprised','angry','focused','goofy','happy']) files[`/assets/characters/${name}.png`]=[`assets/characters/${name}.png`,'image/png'];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     res.setHeader('X-Content-Type-Options', 'nosniff');

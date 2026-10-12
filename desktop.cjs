@@ -40,7 +40,7 @@ else {
   function anchorPopup(){if(!pet||!popover)return;const bounds=popoverBounds(pet.getBounds(),areaFor(pet.getBounds()),360,popup.mode==='bubble'?204:440),side=bounds.x<pet.getBounds().x?'right':'left',changed=popup.side!==side;popup.side=side;popover.setBounds(bounds);if(changed)send(popover,'companion:popup',popup);}
   function showDashboard(section){window.show();window.focus();hidePopup(false);if(section==='settings')send(window,'companion:command',{type:'settings'});}
   function showQuickNote(){showPanel();send(popover,'companion:popup',{...popup,quickNote:true});}
-  function resizePet(){if(!pet)return;const scale=productivity.settings().petScale,b=pet.getBounds();pet.setBounds(clampBounds({...b,width:Math.round(180*scale),height:Math.round(190*scale)},areaFor(b)));anchorPopup();persistPosition();}
+  function resizePet(){if(!pet)return;const scale=productivity.settings().petScale,b=pet.getBounds();pet.setResizable(true);try{pet.setBounds(clampBounds({...b,width:Math.round(180*scale),height:Math.round(190*scale)},areaFor(b)));}finally{pet.setResizable(false);}anchorPopup();persistPosition();}
   function showPanel(){if(!ready)return;send(window,'companion:command',{type:'activity'});clearTimeout(bubbleTimer);if(popup.mode==='bubble')bubbles.unshift(popup);popup={mode:'panel'};anchorPopup();send(popover,'companion:popup',popup);popover.show();popover.focus();}
   function hidePopup(advance=true){clearTimeout(bubbleTimer);popover?.hide();popup={mode:'panel'};send(pet,'companion:popup',popup);if(advance)setTimeout(nextBubble,100);}
   function nextBubble(){
@@ -73,9 +73,6 @@ else {
    {label:'위치 잠금',type:'checkbox',checked:productivity.settings().positionLocked,click:item=>{productivity.saveSettings({...productivity.settings(),positionLocked:item.checked});drag=null;refreshTray();}},
    {label:'피카츄 위치 초기화',enabled:!productivity.settings().positionLocked,click:()=>{const a=screen.getPrimaryDisplay().workArea;pet.setBounds({x:a.x+a.width-198,y:a.y+a.height-212,width:pet.getBounds().width,height:pet.getBounds().height});pet.showInactive();pet.setIgnoreMouseEvents(false);anchorPopup();persistPosition();refreshTray();}},
    {type:'separator'},
-   {label:'25분 집중하기',click:()=>send(window,'companion:command',{type:'focus'})},
-   {label:'5분 쉬기',click:()=>send(window,'companion:command',{type:'rest'})},
-   {type:'separator'},
    {label:'완전히 종료',click:()=>{quitting=true;app.quit();}}
   ];}
   function refreshTray(){tray?.setContextMenu(Menu.buildFromTemplate(menuTemplate()));}
@@ -89,7 +86,6 @@ else {
   ipcMain.handle('startup:set',(e,enabled)=>{if(!isDashboard(e)||process.platform!=='win32')return {ok:false,error:'Windows에서만 지원해요.'};try{app.setLoginItemSettings({openAtLogin:!!enabled,path:process.execPath,args:[]});const actual=app.getLoginItemSettings().openAtLogin;return {ok:actual===!!enabled,enabled:actual,error:actual===!!enabled?null:'Windows 시작 앱 설정을 확인해 주세요.'};}catch(error){return {ok:false,error:error.message};}});
   ipcMain.handle('quick-note:save',async(e,text)=>{if(!allowed(e))return {ok:false};try{return {ok:true,...await obsidian.saveQuickNote(text)};}catch(error){return {ok:false,error:error.message};}});
   ipcMain.on('companion:quick-note',e=>{if(isCompanion(e))showQuickNote();});
-  ipcMain.handle('focus:set',(e,start)=>{if(!isDashboard(e))return null;productivity.focus(!!start,snapshot?.tasks.filter(t=>t.done).length||0);return broadcastFocus();});
   ipcMain.on('companion:snooze',e=>{if(!isCompanion(e)||popup.mode!=='bubble')return;productivity.snooze({...popup});hidePopup();});
   ipcMain.handle('summary:save',async e=>{
    if(!allowed(e))return {ok:false};
@@ -123,13 +119,12 @@ else {
    if(!isDashboard(e))return;const next=cleanSnapshot(input),cheer=completionCheer(snapshot,next),previousMood=snapshot?.mood;snapshot=next;
    send(pet,'companion:state',snapshot);send(popover,'companion:state',snapshot);
    if(cheer&&productivity.route()==='immediate'){const done=next.tasks.filter(t=>t.done).length,total=next.tasks.length;const kind=done===total?'complete':done>=total/2?'halfway':'step';bubble(dialogue.pick(kind)+` (${done}/${total})`,dialogue.pick('happy'));}
-   else if(productivity.route()==='immediate'&&ready&&next.mood!==previousMood&&['focused','goofy'].includes(next.mood))bubble(next.greeting,next.message);
   });
   ipcMain.on('companion:panel',e=>{if(isCompanion(e))showPanel();});
   ipcMain.on('companion:close',e=>{if(isCompanion(e))hidePopup();});
   ipcMain.on('companion:dashboard',(e,section)=>{if(isCompanion(e))showDashboard(section);});
   ipcMain.on('companion:command',(e,input)=>{
-   if(!isCompanion(e)||!['toggle-task','toggle-core','add-task','sync','focus','rest'].includes(input?.type))return;
+   if(!isCompanion(e)||!['toggle-task','toggle-core','add-task','sync'].includes(input?.type))return;
    if(input.type==='toggle-task'&&typeof input.id!=='string')return;
    send(window,'companion:command',{type:input.type,id:typeof input.id==='string'?input.id.slice(0,200):null,done:!!input.done,title:typeof input.title==='string'?input.title.slice(0,140):'',priority:input.priority===1?1:2});
   });

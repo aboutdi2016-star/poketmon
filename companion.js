@@ -33,8 +33,4 @@ bridge?.onState(render);bridge?.onPopup(popup);bridge?.state().then(render);brid
 $('day-filter').onchange=()=>render(snapshot);
 $('bubble-snooze').onclick=()=>bridge.snooze();
 $('daily-summary').onclick=async()=>{const result=await bridge.saveSummary();$('feedback').textContent=result.ok?`요약 저장 · ${result.file}`:result.error;};
-let focusActive=false;function renderFocus(data){focusActive=!!data.active;$('focus-stats').textContent=`오늘 ${data.minutes}분`;$('focus-start').textContent=focusActive?'집중 마치기':'25분 집중';}
-$('focus-start').onclick=()=>bridge.command({type:'focus'});
-bridge?.onFocus(renderFocus);bridge?.productivityStatus().then(data=>data?.focus&&renderFocus(data.focus));
-
 $('quick-note').onclick=()=>bridge.quickNote();$('note-cancel').onclick=()=>{$('quick-note-form').hidden=true;};$('quick-note-form').onsubmit=async e=>{e.preventDefault();const result=await bridge.saveQuickNote($('quick-note-text').value);$('feedback').textContent=result.ok?'옵시디언에 메모를 저장했어요.':result.error;if(result.ok){$('quick-note-text').value='';$('quick-note-form').hidden=true;}};

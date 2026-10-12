@@ -32,7 +32,7 @@ function notify(title,body,priority=2,count=1) {
   if(desktop) desktop.notify(title,body,priority,count);
   else if('Notification' in window && Notification.permission==='granted')new Notification(title,{body});
 }
-const characterImages={sleepy:'/assets/characters/sleepy.png',tired:'/assets/characters/tired.png',surprised:'/assets/characters/surprised.png',angry:'/assets/characters/angry.png'};
+const characterImages={focused:'/assets/characters/focused.png',goofy:'/assets/characters/goofy.png',happy:'/assets/characters/happy.png',sleepy:'/assets/characters/sleepy.png',tired:'/assets/characters/tired.png',surprised:'/assets/characters/surprised.png',angry:'/assets/characters/angry.png'};
 const captainImage='/assets/characters/captain.png';
 let personalPicture=null, pictureMode='expressions';
 try{pictureMode=localStorage.getItem('pika-day-picture-mode')||'expressions';}catch{}
@@ -51,8 +51,6 @@ function expression(mood) {
   document.querySelector('.art').dataset.emotion=mood;
   $('emotion').textContent=(facePreview?'미리보기 · ':showPicture?'메인 이미지 · ':'')+face.label+' · '+face.caption;
   document.querySelectorAll('.face-choice').forEach(b=>{b.classList.toggle('selected',b.dataset.face===facePreview);b.setAttribute('aria-pressed',String(b.dataset.face===facePreview));});
-  $('focus-toggle').textContent=Date.now()<focusUntil?'집중 마치기':'⚡ 집중하기';
-  $('rest-toggle').textContent=Date.now()<restUntil?'쉬기 마치기':'☁ 잠깐 쉬기';
 }
 function renderTasks() {
   const done=state.tasks.filter(t=>t.done).length,total=state.tasks.length,left=total-done,urgent=state.tasks.filter(t=>!t.done&&t.priority===1).length,pct=total?Math.round(done/total*100):0;
@@ -162,8 +160,6 @@ if(desktop){desktop.onCompanionCommand?.(command=>{lastInteraction=Date.now();
   state.tasks.push({id:crypto.randomUUID(),title,priority:command.priority===1?1:2,done:false,source:'manual'});save();
  }else if(command.type==='sync')sync(true);
  else if(command.type==='settings')$('settings').click();
- else if(command.type==='focus')$('focus-toggle').click();
- else if(command.type==='rest')$('rest-toggle').click();
 });desktop.onFocus?.(data=>{focusUntil=data.active?.endAt||0;updateFocusRecord(data);renderTasks();});desktop.productivityStatus?.().then(data=>{if(data?.focus){focusUntil=data.focus.active?.endAt||0;updateFocusRecord(data.focus);renderTasks();}});desktop.onReminder(remind);desktop.onSync(data=>applySync(data,true));desktop.loadMeetings().then(meetings=>{if(meetings.length){state.meetings=meetings;save();}else saveMeetings();}).catch(()=>toast('저장된 회의를 불러오지 못했어요.'));}
 render();if(state.tasks.some(t=>t.demo))$('demo').textContent='예시 지우기';if(!storageOkay)toast('기기 저장을 사용할 수 없어요.');sync(true);checkReminders();
 setInterval(()=>{checkReminders();renderMeetings();if(forcedEmotion&&Date.now()>=forcedEmotion.until)forcedEmotion=null;renderTasks();},15000);
@@ -173,8 +169,6 @@ $('credentials-form').onsubmit=async e=>{e.preventDefault();if(!desktop)return;c
 
 for(const choice of PikaFaces.choices){const button=el('button','face-choice',choice.label);button.dataset.face=choice.id;button.setAttribute('aria-pressed','false');button.onclick=()=>{facePreview=choice.id;renderTasks();};$('face-options').append(button);}
 $('face-auto').onclick=()=>{facePreview=null;renderTasks();};
-$('focus-toggle').onclick=async()=>{facePreview=null;forcedEmotion=null;restUntil=0;const start=Date.now()>=focusUntil;if(desktop){try{const data=await desktop.setFocus(start);focusUntil=data.active?.endAt||0;updateFocusRecord(data);}catch{toast('집중 기록을 시작하지 못했어요.');return;}}else focusUntil=start?Date.now()+25*60000:0;renderTasks();};
-$('rest-toggle').onclick=async()=>{if(desktop)await desktop.setFocus(false);facePreview=null;forcedEmotion=null;focusUntil=0;restUntil=Date.now()<restUntil?0:Date.now()+5*60000;renderTasks();};
 document.addEventListener('pointerdown',()=>{lastInteraction=Date.now();},{passive:true});document.addEventListener('keydown',()=>{lastInteraction=Date.now();},{passive:true});
 
 
@@ -205,11 +199,16 @@ async function refreshObsidianStatus(){try{const status=await desktop.obsidianSt
 $('obsidian-choose').onclick=async()=>{if(!desktop)return;$('obsidian-choose').disabled=true;try{const result=await desktop.chooseObsidian();if(result.ok){await refreshObsidianStatus();toast('보관함을 연결했어요. 체크리스트를 읽어옵니다.');await sync();}else if(!result.canceled)toast(result.error||'보관함을 연결하지 못했어요.');}finally{$('obsidian-choose').disabled=false;}};
 $('obsidian-clear').onclick=async()=>{if(!desktop)return;await desktop.clearObsidian();state.tasks=state.tasks.filter(t=>t.source!=='obsidian');state.providers=state.providers.filter(p=>p.source!=='obsidian');state.seen=state.seen.filter(id=>!id.startsWith('obsidian:'));state.dismissed=state.dismissed.filter(id=>!id.startsWith('obsidian:'));save();await refreshObsidianStatus();toast('보관함 연결을 해제했어요.');};
 
-function updateFocusRecord(data){$('focus-record').textContent=`오늘 집중 ${data.minutes}분 · 완료한 세션 ${data.completed}회${data.active?' · 집중 중':''}`;}
-async function refreshProductivityStatus(){try{const data=await desktop.productivityStatus();$('quiet-enabled').checked=data.settings.quietEnabled;$('quiet-start').value=data.settings.quietStart;$('quiet-end').value=data.settings.quietEnd;$('notification-mode').value=data.settings.notificationMode;$('pet-scale').value=data.settings.petScale;$('position-locked').checked=data.settings.positionLocked;$('size-locked').checked=data.settings.sizeLocked;const startup=await desktop.startupStatus();$('startup-enabled').checked=startup.enabled;$('startup-enabled').disabled=!startup.supported;updateFocusRecord(data.focus);}catch{toast('알림 설정을 확인하지 못했어요.');}}
-$('quiet-form').onsubmit=async e=>{e.preventDefault();const result=await desktop.saveProductivitySettings({notificationMode:$('notification-mode').value,petScale:Number($('pet-scale').value),positionLocked:$('position-locked').checked,sizeLocked:$('size-locked').checked,quietEnabled:$('quiet-enabled').checked,quietStart:$('quiet-start').value,quietEnd:$('quiet-end').value});toast(result.ok?'알림 설정을 저장했어요.':result.error||'설정을 저장하지 못했어요.');};
+function updateFocusRecord(data){if($('focus-record'))$('focus-record').textContent=`오늘 집중 ${data.minutes}분 · 완료한 세션 ${data.completed}회${data.active?' · 집중 중':''}`;}
+let petSettings=null;
+async function refreshProductivityStatus(){try{const data=await desktop.productivityStatus();petSettings=data.settings;$('pet-scale').disabled=!!data.settings.sizeLocked;$('quiet-enabled').checked=data.settings.quietEnabled;$('quiet-start').value=data.settings.quietStart;$('quiet-end').value=data.settings.quietEnd;$('notification-mode').value=data.settings.notificationMode;$('pet-scale').value=data.settings.petScale;$('position-locked').checked=data.settings.positionLocked;$('size-locked').checked=data.settings.sizeLocked;const startup=await desktop.startupStatus();$('startup-enabled').checked=startup.enabled;$('startup-enabled').disabled=!startup.supported;updateFocusRecord(data.focus);}catch{toast('알림 설정을 확인하지 못했어요.');}}
+$('quiet-form').onsubmit=async e=>{e.preventDefault();const result=await desktop.saveProductivitySettings({notificationMode:$('notification-mode').value,petScale:Number($('pet-scale').value),positionLocked:$('position-locked').checked,sizeLocked:$('size-locked').checked,quietEnabled:$('quiet-enabled').checked,quietStart:$('quiet-start').value,quietEnd:$('quiet-end').value});if(result.ok){petSettings=result.settings;$('pet-scale').disabled=!!result.settings.sizeLocked;}toast(result.ok?'알림 설정을 저장했어요.':result.error||'설정을 저장하지 못했어요.');};
 $('save-summary').onclick=async()=>{const result=await desktop.saveSummary();$('summary-status').textContent=result.ok?`저장 완료 · ${result.file}`:result.error;};
 
 function toggleCore(id){const task=state.tasks.find(t=>t.id===id),day=PikaDayTools.localDay();if(!task)return;if(task.coreDay===day)task.coreDay=null;else{if(state.tasks.filter(t=>t.coreDay===day).length>=3){toast('오늘의 핵심은 최대 3개예요. 기존 선택을 해제해 주세요.');return;}task.coreDay=day;}save();}
 
 $('startup-enabled').onchange=async()=>{const result=await desktop.setStartup($('startup-enabled').checked);if(!result.ok){$('startup-enabled').checked=!$('startup-enabled').checked;toast(result.error);}else toast('Windows 시작 시 실행 설정을 저장했어요.');};
+
+async function savePetControl(change){if(!desktop||!petSettings)return;const result=await desktop.saveProductivitySettings({...petSettings,...change});if(result.ok){petSettings=result.settings;$('pet-scale').disabled=!!petSettings.sizeLocked;toast('피카츄 크기·잠금 설정을 적용했어요.');}else{toast(result.error||'크기를 적용하지 못했어요.');$('pet-scale').value=petSettings.petScale;$('size-locked').checked=petSettings.sizeLocked;}}
+$('pet-scale').onchange=()=>savePetControl({petScale:Number($('pet-scale').value)});
+$('size-locked').onchange=()=>savePetControl({sizeLocked:$('size-locked').checked});

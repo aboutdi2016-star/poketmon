@@ -1,4 +1,4 @@
-const images = new Set(['captain', 'sleepy', 'tired', 'surprised', 'angry'].map(n => `/assets/characters/${n}.png`));
+const images = new Set(['captain', 'sleepy', 'tired', 'surprised', 'angry', 'focused', 'goofy', 'happy'].map(n => `/assets/characters/${n}.png`));
 const cleanText = (value, max) => typeof value === 'string' ? value.slice(0, max) : '';
 function cleanSnapshot(input) {
   const tasks = (Array.isArray(input?.tasks) ? input.tasks : []).filter(t => typeof t?.id === 'string' && typeof t.title === 'string').slice(0, 6000).map(t => ({id:t.id.slice(0,200),title:t.title.slice(0,140),done:!!t.done,priority:t.priority===1?1:2,source:cleanText(t.source,30),demo:!!t.demo,due:cleanText(t.due,10),scheduled:cleanText(t.scheduled,10),todayTag:!!t.todayTag,coreDay:cleanText(t.coreDay,10),completedAt:Number.isFinite(Date.parse(t.completedAt))?t.completedAt:null}));
