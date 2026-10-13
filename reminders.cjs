@@ -1,5 +1,5 @@
 function dueReminders(meetings, reminded, now = Date.now()) {
-  return meetings.filter(m => { const start = Date.parse(m.start); return Number.isFinite(start) && now >= start - 600000 && now < start && !reminded.has(`${m.id}:${m.start}`); });
+  return meetings.filter(m => { const start = Date.parse(m.start); return Number.isFinite(start) && now >= start - 7200000 && now < start && !reminded.has(`${m.id}:${m.start}`); });
 }
 function validateMeetings(items) {
   if (!Array.isArray(items)) return [];

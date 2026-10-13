@@ -37,7 +37,7 @@ async function jira(env, request) {
 }
 async function calendar(env, request) {
   const result = await request(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${new URLSearchParams({ timeMin: new Date().toISOString(), timeMax: new Date(Date.now() + 7 * 86400000).toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '50' })}`, env.GMAIL_ACCESS_TOKEN);
-  return (result.items || []).filter(e => e.status !== 'cancelled' && e.start?.dateTime && !e.attendees?.some(a => a.self && a.responseStatus === 'declined')).map(e => ({ id: `calendar:${e.id}`, title: e.summary || '회의', start: e.start.dateTime, url: safeUrl(e.hangoutLink || e.conferenceData?.entryPoints?.find(p => p.entryPointType === 'video')?.uri), source: 'calendar' }));
+  return (result.items || []).filter(e => e.status !== 'cancelled' && (e.start?.dateTime||e.start?.date) && !e.attendees?.some(a => a.self && a.responseStatus === 'declined')).map(e => ({ id: `calendar:${e.id}`, title: (e.summary || '일정')+(e.start.dateTime?'':' (종일 · 09시 기준)'), start: e.start.dateTime||new Date(e.start.date+'T09:00:00').toISOString(), url: safeUrl(e.hangoutLink || e.conferenceData?.entryPoints?.find(p => p.entryPointType === 'video')?.uri), source: 'calendar' }));
 }
 function failure(error) { if (error.status === 401) return '인증이 만료되었거나 유효하지 않아요.'; if (error.status === 403) return '접근 권한 또는 네트워크 허용 설정을 확인해 주세요.'; return '수집하지 못했어요. 연결 설정을 확인하고 다시 시도해 주세요.'; }
 async function collect(env = process.env, request = api) {

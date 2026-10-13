@@ -24,7 +24,7 @@ test('collects actionable Slack and Gmail, assigned Jira, timed calendar events'
  assert.equal(result.results[0].items.length,1);assert.equal(result.results[0].items[0].priority,1);
  assert.equal(result.results[1].items.length,1);assert.equal(result.results[1].items[0].candidate,true);
  assert.equal(result.results[2].items[0].priority,1);
- assert.equal(result.results[3].items.length,1);assert.equal(result.results[3].items[0].url,'https://meet.google.com/test');
+ assert.equal(result.results[3].items.length,2);assert.equal(new Date(result.results[3].items[1].start).getHours(),9);assert.equal(result.results[3].items[0].url,'https://meet.google.com/test');
 });
 test('one service failure preserves results from successful services',async()=>{
  const result=await collect({SLACK_USER_TOKEN:'x',GMAIL_ACCESS_TOKEN:'x'},async(url)=>{
@@ -35,10 +35,10 @@ test('one service failure preserves results from successful services',async()=>{
  assert.equal(result.results[0].status,'error');assert.ok(!JSON.stringify(result).includes('secret must never appear'));
  assert.equal(result.results[1].status,'connected');assert.equal(result.results[3].status,'error');
 });
-test('reminder triggers at 10 minutes, once per event start, excludes past meetings',()=>{
+test('reminder triggers at two hours, once per event start, excludes past meetings',()=>{
  const start=Date.parse('2026-10-11T01:00:00Z'),meeting={id:'one',title:'회의',start:new Date(start).toISOString()};
- assert.equal(dueReminders([meeting],new Set(),start-600001).length,0);
- assert.equal(dueReminders([meeting],new Set(),start-600000).length,1);
+ assert.equal(dueReminders([meeting],new Set(),start-7200001).length,0);
+ assert.equal(dueReminders([meeting],new Set(),start-7200000).length,1);
  assert.equal(dueReminders([meeting],new Set(['one:'+meeting.start]),start-1000).length,0);
  assert.equal(dueReminders([meeting],new Set(),start).length,0);
  assert.equal(dueReminders([{...meeting,start:new Date(start+60000).toISOString()}],new Set(['one:'+meeting.start]),start).length,1);
